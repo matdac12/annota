@@ -1,5 +1,6 @@
-//! The pure maths of the Overlay and the Region hand-over (spec §5.3, §6.3): clamping a drag to its
-//! monitor, the 8×8 threshold, cropping the frozen frame, and the label placement. No Win32 in here.
+//! The pure maths of the Overlay and the Region hand-over (spec §5.3, §6.2, §6.3): clamping a drag to its
+//! monitor, the 8×8 threshold, cropping the frozen frame, the label placement, and where the Editor opens.
+//! No Win32 in here.
 //!
 //! Everything is in physical pixels. "Local" coordinates are relative to one monitor's top-left;
 //! "screen" coordinates are virtual-desktop ones, where a monitor above the primary has a negative `top`.
@@ -64,7 +65,8 @@ pub fn crop_to_rgba(frame: &[u8], width: i32, height: i32, region: Rect) -> Opti
     }
     let (left, top) = (region.left as usize, region.top as usize);
     let (w, h) = (region.width() as usize, region.height() as usize);
-    let mut rgba = Vec::with_capacity(w * h * 4);
+    // Room for the dimensions trailer, so [`with_dimensions`] appends without copying the pixels again.
+    let mut rgba = Vec::with_capacity(w * h * 4 + DIMENSIONS_BYTES);
     for y in top..top + h {
         // Bottom-up: picture row `y` sits `height - 1 - y` rows into the buffer.
         let start = ((height - 1 - y) * width + left) * 4;
@@ -73,6 +75,64 @@ pub fn crop_to_rgba(frame: &[u8], width: i32, height: i32, region: Rect) -> Opti
         }
     }
     Some(rgba)
+}
+
+/// Bytes [`with_dimensions`] appends: width then height, little-endian `u32`.
+pub const DIMENSIONS_BYTES: usize = 8;
+
+/// `rgba` (a `width`×`height` image from [`crop_to_rgba`]) with its dimensions appended, which is what the
+/// Editor's page receives. At the end rather than the start so the page reads the pixels in place.
+pub fn with_dimensions(mut rgba: Vec<u8>, width: u32, height: u32) -> Vec<u8> {
+    rgba.extend_from_slice(&width.to_le_bytes());
+    rgba.extend_from_slice(&height.to_le_bytes());
+    rgba
+}
+
+/// How much of the capture monitor's work area the Editor may fill (spec §6.2).
+pub const FIT_PERCENT: i32 = 90;
+
+/// The Editor window's non-image parts, in physical pixels at the capture monitor's scale.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Chrome {
+    /// Outer size minus inner size: the title bar and the borders.
+    pub frame: (i32, i32),
+    /// The hint line under the image.
+    pub hint: i32,
+    /// The narrowest client area that still shows the whole hint line, however small the Region.
+    pub min_inner_width: i32,
+}
+
+/// Where the Editor goes for one Snap: the client-area size to `set_size`, and the outer top-left to
+/// `set_position`, both physical.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Placement {
+    pub inner: (i32, i32),
+    pub position: (i32, i32),
+}
+
+/// The Editor for an `image` (width, height) on a monitor whose work area is `work` (virtual-desktop
+/// physical pixels, so `left`/`top` may be negative): the image at 100%, scaled down only if the whole
+/// window wouldn't fit [`FIT_PERCENT`] of the work area, centred on it.
+pub fn place_editor(image: (i32, i32), work: Rect, chrome: Chrome) -> Placement {
+    let room_w = (work.width() * FIT_PERCENT / 100 - chrome.frame.0).max(1);
+    let room_h = (work.height() * FIT_PERCENT / 100 - chrome.frame.1 - chrome.hint).max(1);
+    let (w, h) = (image.0.max(1), image.1.max(1));
+    let shown = if w <= room_w && h <= room_h {
+        (w, h)
+    } else if room_w * h <= room_h * w {
+        // The width is what binds: floor so the height can't spill over.
+        (room_w, (h as i64 * room_w as i64 / w as i64).max(1) as i32)
+    } else {
+        ((w as i64 * room_h as i64 / h as i64).max(1) as i32, room_h)
+    };
+    let inner = (shown.0.max(chrome.min_inner_width.min(room_w)), shown.1 + chrome.hint);
+    let outer = (inner.0 + chrome.frame.0, inner.1 + chrome.frame.1);
+    Placement { inner, position: centred(work, outer) }
+}
+
+/// The top-left of a window of `outer` size centred on `work`.
+pub fn centred(work: Rect, outer: (i32, i32)) -> (i32, i32) {
+    (work.left + (work.width() - outer.0) / 2, work.top + (work.height() - outer.1) / 2)
 }
 
 /// The top-left of the `W × H` label for a pointer at `cursor` (monitor-local): `gap` pixels below and to
@@ -219,6 +279,94 @@ mod tests {
     fn the_size_readout_shows_physical_width_times_height() {
         let region = drag_rect((100, 100), (1379, 819), 2560, 1440);
         assert_eq!(size_text(region), "1280 \u{d7} 720");
+    }
+
+    #[test]
+    fn the_dimensions_ride_after_the_pixels_without_moving_them() {
+        let rgba = crop_to_rgba(&frame_3x2(), 3, 2, Rect { left: 0, top: 0, right: 3, bottom: 2 }).unwrap();
+        let pixels = rgba.as_ptr();
+        let sent = with_dimensions(rgba, 3, 2);
+        assert_eq!(sent.as_ptr(), pixels, "the 24 pixel bytes were not copied again");
+        assert_eq!(sent.len(), 3 * 2 * 4 + DIMENSIONS_BYTES);
+        assert_eq!(&sent[24..], &[3, 0, 0, 0, 2, 0, 0, 0]);
+    }
+
+    const CHROME: Chrome = Chrome { frame: (16, 39), hint: 28, min_inner_width: 300 };
+    const WORK: Rect = Rect { left: 0, top: 0, right: 1920, bottom: 1160 };
+
+    #[test]
+    fn a_region_that_fits_opens_at_100_percent_centred_on_the_work_area() {
+        let p = place_editor((800, 600), WORK, CHROME);
+        assert_eq!(p.inner, (800, 628), "the image plus the hint line, one image pixel per screen pixel");
+        // Outer is 816×667: (1920-816)/2 and (1160-667)/2.
+        assert_eq!(p.position, (552, 246));
+    }
+
+    #[test]
+    fn a_region_exactly_the_size_of_the_room_is_not_scaled() {
+        // 90% of 1920 is 1728, minus the frame 1712; 90% of 1160 is 1044, minus 39 and 28 is 977.
+        assert_eq!(place_editor((1712, 977), WORK, CHROME).inner, (1712, 1005));
+        assert_eq!(place_editor((1713, 977), WORK, CHROME).inner.0, 1712, "one pixel wider is scaled");
+    }
+
+    #[test]
+    fn a_region_too_wide_is_scaled_down_to_the_width_it_has_room_for() {
+        // A whole 3840×2160 monitor onto 1920×1160: the width binds (1712/3840 < 977/2160).
+        let p = place_editor((3840, 2160), WORK, CHROME);
+        assert_eq!(p.inner, (1712, 963 + 28));
+        let outer = (p.inner.0 + CHROME.frame.0, p.inner.1 + CHROME.frame.1);
+        assert!(outer.0 <= 1728 && outer.1 <= 1044, "within 90% of the work area: {outer:?}");
+    }
+
+    #[test]
+    fn a_region_too_tall_is_scaled_down_to_the_height_it_has_room_for() {
+        let p = place_editor((600, 2000), WORK, CHROME);
+        assert_eq!(p.inner, (300, 977 + 28), "the image is 293 wide, in a canvas wide enough for the hint");
+    }
+
+    #[test]
+    fn scaling_down_keeps_the_aspect_ratio_to_within_a_pixel() {
+        let (w, h) = (3000, 1111);
+        let p = place_editor((w, h), WORK, CHROME);
+        let shown = (p.inner.0, p.inner.1 - CHROME.hint);
+        assert!((shown.1 as f64 - shown.0 as f64 * h as f64 / w as f64).abs() < 1.0, "{shown:?}");
+    }
+
+    #[test]
+    fn a_work_area_above_the_primary_monitor_centres_in_negative_coordinates() {
+        // The 2560×1440 above the laptop, its taskbar-less work area at y = -1440.
+        let work = Rect { left: -320, top: -1440, right: 2240, bottom: 0 };
+        let p = place_editor((1000, 500), work, CHROME);
+        assert_eq!(p.inner, (1000, 528));
+        // Outer 1016×567: -320 + (2560-1016)/2 and -1440 + (1440-567)/2.
+        assert_eq!(p.position, (452, -1440 + 436));
+        assert!(p.position.1 < 0);
+    }
+
+    #[test]
+    fn a_work_area_to_the_left_of_the_primary_monitor_centres_in_negative_x() {
+        let work = Rect { left: -1920, top: 0, right: 0, bottom: 1040 };
+        let p = place_editor((500, 400), work, CHROME);
+        assert_eq!(p.position, (-1920 + (1920 - 516) / 2, (1040 - 467) / 2));
+    }
+
+    #[test]
+    fn a_small_region_gets_a_window_wide_enough_for_the_hint_line_and_is_centred_by_it() {
+        let p = place_editor((100, 80), WORK, CHROME);
+        assert_eq!(p.inner, (300, 80 + 28), "the image sits centred in the wider canvas");
+        assert_eq!(p.position, (WORK.width() / 2 - 316 / 2, (1160 - (108 + 39)) / 2));
+    }
+
+    #[test]
+    fn centring_uses_the_outer_size_the_window_really_has() {
+        let work = Rect { left: -1920, top: -300, right: 0, bottom: 740 };
+        assert_eq!(centred(work, (600, 400)), (-1920 + 660, -300 + 320));
+    }
+
+    #[test]
+    fn a_tiny_work_area_still_gives_a_window_of_at_least_one_pixel() {
+        let p = place_editor((100, 100), Rect { left: 0, top: 0, right: 10, bottom: 10 }, CHROME);
+        assert!(p.inner.0 >= 1 && p.inner.1 > CHROME.hint);
     }
 
     #[test]

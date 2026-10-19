@@ -3,6 +3,7 @@
 
 mod autostart;
 mod capture;
+mod commands;
 mod editor;
 mod geometry;
 mod launch;
@@ -46,6 +47,13 @@ fn main() {
             }
         }))
         .manage(snap::Resident::new())
+        .manage(commands::Handoff::default())
+        .invoke_handler(tauri::generate_handler![
+            commands::next_snap,
+            commands::editor_painted,
+            commands::copy_snap,
+            commands::discard_snap
+        ])
         .setup(|app| {
             tray::build(app)?;
             editor::build(app)?;

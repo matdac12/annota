@@ -6,11 +6,21 @@
 
 use std::borrow::Cow;
 use std::sync::Mutex;
+use std::time::Duration;
 
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
-use crate::capture::{self, Region};
+use crate::capture;
+use crate::commands::Handoff;
+use crate::editor;
 use crate::overlay::{self, Outcome};
+
+/// What the Resident tells the Editor's page when `--snap` arrives while it is open: do what Ctrl+C does.
+pub const COPY_REQUESTED: &str = "copy-requested";
+
+/// If the page hasn't painted a Region by now, show the Editor anyway rather than leave the Resident
+/// stuck in `Selecting` with nothing on screen.
+const PAINT_DEADLINE: Duration = Duration::from_millis(1500);
 
 /// What the Resident is doing. A `--snap` that arrives while the Resident is still starting (spec §3.1,
 /// "Starting") never gets here: the second process is dropped by the `Local\` mutex.
@@ -21,7 +31,6 @@ pub enum State {
     /// The Overlay is up and the user is dragging a Region.
     Selecting,
     /// The Editor is open on a Region.
-    #[allow(dead_code)] // Entered by the Editor slice (ANNOTA-16).
     Editing,
 }
 
@@ -102,8 +111,8 @@ fn grab_and_select(app: &AppHandle) {
     }
 }
 
-/// The Overlay is gone. A cancel is back to `Idle`. A Region goes to the clipboard, a tracer bullet until
-/// the Editor takes it from here (ANNOTA-16, which replaces this).
+/// The Overlay is gone. A cancel is back to `Idle`. A Region goes to the Editor, which shows itself once
+/// its page has painted it ([`editor_painted`]).
 fn selection_ended(app: &AppHandle, outcome: Outcome) {
     match outcome {
         Outcome::Cancelled => set_state(app, State::Idle),
@@ -117,17 +126,41 @@ fn selection_ended(app: &AppHandle, outcome: Outcome) {
                 region.monitor.left,
                 region.monitor.top
             );
-            // Off the main thread: arboard encodes a PNG, which takes a while for a big Region. The
-            // Resident stays `Selecting` until it is done, so a second Snap can't start mid-copy.
-            let app = app.clone();
-            std::thread::spawn(move || {
-                if let Err(e) = copy_to_clipboard(&region) {
-                    eprintln!("snap: clipboard: {e}");
+            match editor::open(app, region) {
+                Ok(token) => watch_for_paint(app, token),
+                Err(e) => {
+                    eprintln!("snap: editor: {e}");
+                    editor::hide(app);
+                    set_state(app, State::Idle);
                 }
-                set_state(&app, State::Idle);
-            });
+            }
         }
     }
+}
+
+/// The page called `editor_painted` (or the deadline passed): show the Editor and move to `Editing`. Only
+/// the first of the two does anything.
+pub fn editor_painted(app: &AppHandle) {
+    if !app.state::<Handoff>().take_paint() {
+        return;
+    }
+    editor::reveal(app);
+    set_state(app, State::Editing);
+}
+
+fn watch_for_paint(app: &AppHandle, token: u64) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(PAINT_DEADLINE);
+        let on_main = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            if on_main.state::<Handoff>().take_paint_for(token) {
+                eprintln!("snap: the page did not report a paint in time; showing the Editor");
+                editor::reveal(&on_main);
+                set_state(&on_main, State::Editing);
+            }
+        });
+    });
 }
 
 fn set_state(app: &AppHandle, state: State) {
@@ -136,18 +169,47 @@ fn set_state(app: &AppHandle, state: State) {
     }
 }
 
-/// `arboard` writes the "PNG" and `CF_DIBV5` formats (spec §9). The Region's alpha is already 255.
-fn copy_to_clipboard(region: &Region) -> Result<(), arboard::Error> {
-    arboard::Clipboard::new()?.set_image(arboard::ImageData {
-        width: region.width(),
-        height: region.height(),
-        bytes: Cow::Borrowed(&region.rgba),
-    })
+/// The page's `getImageData` goes to the clipboard (spec §9): `arboard` writes the "PNG" and `CF_DIBV5`
+/// formats, opaque sRGB. The Editor closes once the clipboard is set. Anything but `Editing` is a stale
+/// request (the Snap already ended) and is ignored.
+pub fn copy_image(app: &AppHandle, width: usize, height: usize, rgba: &[u8]) -> Result<(), String> {
+    if app.try_state::<Resident>().is_none_or(|r| r.state() != State::Editing) {
+        return Ok(());
+    }
+    if width == 0 || height == 0 || rgba.len() != width * height * 4 {
+        return Err(format!("{} bytes is not a {width}x{height} RGBA image", rgba.len()));
+    }
+    arboard::Clipboard::new()
+        .and_then(|mut clipboard| clipboard.set_image(arboard::ImageData { width, height, bytes: Cow::Borrowed(rgba) }))
+        .map_err(|e| format!("clipboard: {e}"))?;
+    finish(app);
+    Ok(())
 }
 
-/// Stub: renders the Snap, sets the clipboard and closes the Editor (spec §9), in a later slice.
-pub fn copy_and_close(_app: &AppHandle) {
-    eprintln!("copy_and_close");
+/// Esc or the title-bar ✕: close the Editor with nothing copied.
+pub fn discard(app: &AppHandle) {
+    if app.try_state::<Resident>().is_some_and(|r| r.state() == State::Editing) {
+        finish(app);
+    }
+}
+
+/// Hides the Editor and goes back to `Idle`, on the main thread where the window lives.
+fn finish(app: &AppHandle) {
+    let on_main = app.clone();
+    let queued = app.run_on_main_thread(move || {
+        editor::hide(&on_main);
+        on_main.state::<Handoff>().forget_region();
+        set_state(&on_main, State::Idle);
+    });
+    if queued.is_err() {
+        set_state(app, State::Idle);
+    }
+}
+
+/// `--snap` (or the tray) while the Editor is open: the same as Ctrl+C. The canvas lives in the page, so
+/// ask it to copy.
+pub fn copy_and_close(app: &AppHandle) {
+    let _ = app.emit_to(editor::LABEL, COPY_REQUESTED, ());
 }
 
 #[cfg(test)]
