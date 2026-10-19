@@ -151,7 +151,7 @@ pub fn reveal(app: &AppHandle) {
     let _ = window.as_ref().set_focus();
     // ANNOTA-23: tell the page how to send its pixels, and give it the shared buffer if that is the way.
     let staged = app.state::<Staged>();
-    let _ = app.emit_to(LABEL, TRANSFER_MODE, staged.mode().code());
+    let _ = app.emit_to(LABEL, TRANSFER_MODE, staged.announcement());
     staged.post_shared(app);
 }
 

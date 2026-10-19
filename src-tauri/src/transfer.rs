@@ -69,6 +69,8 @@ pub struct Staged(Mutex<Inner>);
 #[derive(Default)]
 struct Inner {
     mode: Mode,
+    /// Counts Snaps handed to the page: the page only trusts a shared buffer tagged with the current one.
+    serial: u64,
     size: (u32, u32),
     /// Delta: the Region as the page received it.
     base: Option<Vec<u8>>,
@@ -85,12 +87,15 @@ impl Staged {
     pub fn stage(&self, mode: Mode, width: u32, height: u32, rgba: &[u8]) {
         let mut inner = self.lock();
         inner.mode = mode;
+        inner.serial += 1;
         inner.size = (width, height);
         inner.base = (mode == Mode::Delta).then(|| rgba.to_vec());
     }
 
-    pub fn mode(&self) -> Mode {
-        self.lock().mode
+    /// The mode and the serial of the Snap now open, which the page is told with `transfer-mode`.
+    pub fn announcement(&self) -> (u32, u64) {
+        let inner = self.lock();
+        (inner.mode.code(), inner.serial)
     }
 
     /// The Snap is over: let go of what it kept.
@@ -149,14 +154,15 @@ pub mod shared {
         /// Creates the buffer for the staged Region and posts it to the page. On the main thread, once the
         /// Editor is shown. The page copies into it only if it has arrived by Ctrl+C; otherwise it sends raw.
         pub fn post_shared(&self, app: &AppHandle) {
-            let (mode, (width, height)) = {
+            let (mode, (width, height), serial) = {
                 let inner = self.lock();
-                (inner.mode, inner.size)
+                (inner.mode, inner.size, inner.serial)
             };
             if mode != Mode::Shared {
                 return;
             }
             let len = width as usize * height as usize * 4;
+            let tag = windows_core::HSTRING::from(format!("{{\"serial\":{serial}}}"));
             let Some(window) = app.get_webview_window(editor::LABEL) else { return };
             let app = app.clone();
             let _ = window.with_webview(move |webview| {
@@ -167,7 +173,7 @@ pub mod shared {
                     let mut ptr = std::ptr::null_mut();
                     buffer.Buffer(&mut ptr)?;
                     let core = webview.controller().CoreWebView2()?.cast::<ICoreWebView2_17>()?;
-                    core.PostSharedBufferToScript(&buffer, COREWEBVIEW2_SHARED_BUFFER_ACCESS_READ_WRITE, PCWSTR::null())?;
+                    core.PostSharedBufferToScript(&buffer, COREWEBVIEW2_SHARED_BUFFER_ACCESS_READ_WRITE, PCWSTR(tag.as_ptr()))?;
                     windows_core::Result::Ok(Held { buffer, ptr, len })
                 })();
                 match made {
