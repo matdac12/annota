@@ -12,6 +12,7 @@
     "test": "vitest run",
     "tauri": "tauri",
     "build:exe": "vite build && tauri build --no-bundle",
+    "build:installer": "vite build && tauri build --bundles nsis",
     "check": "pnpm typecheck && pnpm test && pnpm build && cargo test --manifest-path src-tauri/Cargo.toml && cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings"
   },
   "devDependencies": {
