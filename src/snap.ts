@@ -9,6 +9,8 @@ export interface Snap {
   image: CanvasImageSource;
   /** The Boxes in number order: the first is 1. */
   boxes: Box[];
+  /** The Region's RGBA as Rust sent it, to compare the export with when copying (`delta.ts`). */
+  pixels?: Uint8ClampedArray;
 }
 
 /** Bytes after the pixels: width and height as little-endian u32. */

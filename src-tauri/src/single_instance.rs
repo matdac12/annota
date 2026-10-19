@@ -65,7 +65,8 @@ pub fn forward_to_resident() -> bool {
     }
 
     let cwd = std::env::current_dir().unwrap_or_default();
-    let args: Vec<String> = std::env::args_os().map(|a| a.to_string_lossy().into_owned()).collect();
+    let mut args: Vec<String> = std::env::args_os().map(|a| a.to_string_lossy().into_owned()).collect();
+    crate::timings::extend_forwarded(&mut args);
     let bytes = encode_payload(&cwd.to_string_lossy(), &args);
     let data = COPYDATASTRUCT {
         dwData: COPYDATA_KIND,

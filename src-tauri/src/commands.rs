@@ -12,6 +12,8 @@ use tauri::{AppHandle, State};
 use tokio::sync::oneshot;
 
 use crate::snap;
+use crate::timings;
+use crate::delta::Kept;
 
 /// Where a Region waits for the page: either the page is parked on `waiting`, or the Region sits in
 /// `ready` until the page asks.
@@ -97,10 +99,11 @@ pub fn editor_painted(app: AppHandle) {
     snap::editor_painted(&app);
 }
 
-/// Ctrl+C: the canvas's pixels as raw RGBA in the body, `width` and `height` in the headers. Sets the
-/// clipboard, then the Editor closes.
+/// Ctrl+C, the way back when `copy_delta` can't be used: the canvas's pixels as raw RGBA in the body, `width`
+/// and `height` in the headers. Sets the clipboard, then the Editor closes.
 #[tauri::command]
 pub async fn copy_snap(app: AppHandle, request: Request<'_>) -> Result<(), String> {
+    timings::mark("copy_recv");
     let InvokeBody::Raw(rgba) = request.body() else {
         return Err("copy_snap needs the raw RGBA as its body".into());
     };
@@ -111,6 +114,26 @@ pub async fn copy_snap(app: AppHandle, request: Request<'_>) -> Result<(), Strin
         return Err("copy_snap needs width and height headers".into());
     };
     snap::copy_image(&app, width, height, rgba)
+}
+
+/// Ctrl+C (spec §9): only the rectangles the Boxes and Callouts changed, which Rust patches into the Region
+/// it kept (`delta::apply_rects` has the format). Sets the clipboard, then the Editor closes.
+#[tauri::command]
+pub async fn copy_delta(app: AppHandle, kept: State<'_, Kept>, request: Request<'_>) -> Result<(), String> {
+    timings::mark("copy_recv");
+    let InvokeBody::Raw(payload) = request.body() else {
+        return Err("copy_delta needs the changed rectangles as its body".into());
+    };
+    let (rgba, width, height) = kept.patched(payload)?;
+    timings::mark("delta_applied");
+    snap::copy_image(&app, width, height, &rgba)
+}
+
+/// A timing mark from the page (ANNOTA-20); only the named ones are taken, and only in a timings build.
+#[cfg(feature = "timings")]
+#[tauri::command]
+pub fn timing_mark(name: String) {
+    timings::page_mark(&name);
 }
 
 /// Esc: close the Editor with nothing copied.

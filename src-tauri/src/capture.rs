@@ -19,6 +19,7 @@ use windows::Win32::Graphics::Gdi::{
 };
 
 use crate::geometry::{self, Rect};
+use crate::timings;
 
 /// A 32 bpp BGRA bitmap with a memory DC it is selected into. The rows are bottom-up (positive
 /// `biHeight`), which is what [`geometry::crop_to_rgba`] expects.
@@ -145,6 +146,7 @@ impl Region {
 /// Re-reads the monitors and freezes each one. Monitors change during the day (dock, lid), so nothing is
 /// cached between Snaps.
 pub fn grab_all() -> Result<Vec<MonitorCapture>, String> {
+    timings::mark("grab_start");
     let rects = monitor_rects()?;
     // SAFETY: the screen DC is released before returning; each blit targets a `Dib` made for it.
     unsafe {
@@ -156,15 +158,26 @@ pub fn grab_all() -> Result<Vec<MonitorCapture>, String> {
             .into_iter()
             .map(|rect| {
                 let frame = Dib::new(rect.width(), rect.height())?;
-                BitBlt(frame.dc(), 0, 0, frame.width, frame.height, Some(screen), rect.left, rect.top, SRCCOPY)
+                BitBlt(frame.dc(), 0, 0, frame.width, frame.height, Some(screen), rect.left, rect.top, rop())
                     .map_err(|e| format!("BitBlt of {rect:?} failed: {e}"))?;
+                timings::mark_detail("blit", i64::from(rect.width()) * i64::from(rect.height()));
                 Ok(MonitorCapture { rect, frame })
             })
             .collect();
         // GDI batches its calls; the DIBs' memory is read directly from here on.
         let _ = GdiFlush();
+        timings::mark("grab_done");
         ReleaseDC(None, screen);
         grabbed
+    }
+}
+
+/// `SRCCOPY`; a timings build can add `CAPTUREBLT` from the tray to compare the two (ANNOTA-20).
+fn rop() -> windows::Win32::Graphics::Gdi::ROP_CODE {
+    if timings::captureblt() {
+        SRCCOPY | windows::Win32::Graphics::Gdi::CAPTUREBLT
+    } else {
+        SRCCOPY
     }
 }
 

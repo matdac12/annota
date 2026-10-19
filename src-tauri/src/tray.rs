@@ -63,6 +63,10 @@ pub fn build(app: &App) -> tauri::Result<()> {
     )?;
     let quit = MenuItem::with_id(app, QUIT, "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&snap_item, &autostart_item, &quit])?;
+    #[cfg(feature = "timings")]
+    let timing_items = crate::timings::tray_items(app)?;
+    #[cfg(feature = "timings")]
+    timing_items.append_to(&menu)?;
     let on_click_item = autostart_item.clone();
     let on_menu_item = autostart_item;
 
@@ -71,6 +75,10 @@ pub fn build(app: &App) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| {
+            #[cfg(feature = "timings")]
+            if timing_items.handle(event.id().as_ref()) {
+                return;
+            }
             if event.id().as_ref() == AUTOSTART {
                 // The click already flipped the box; flip the registry, then show the registry's
                 // answer rather than assume it worked.

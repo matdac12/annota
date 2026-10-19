@@ -6,6 +6,10 @@ edition = "2021"
 license = "MIT"
 publish = false
 
+[features]
+# ANNOTA-20: QPC timing marks and the tray items that dump them. Never on in a normal build.
+timings = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -29,6 +33,7 @@ windows = { version = "0.62", features = [
     "Win32_Security",
     "Win32_System_DataExchange",
     "Win32_System_LibraryLoader",
+    "Win32_System_Performance",
     "Win32_System_Threading",
     "Win32_UI_HiDpi",
     "Win32_UI_Input_KeyboardAndMouse",
@@ -45,3 +50,24 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+# ANNOTA-23: `arboard` encodes the "PNG" format with `image`'s PNG encoder over 33 MB at 4K. Built for size
+# that took ~270 ms; at opt-level 3 it takes ~50 ms. Everything else stays small.
+[profile.release.package.png]
+opt-level = 3
+[profile.release.package.fdeflate]
+opt-level = 3
+[profile.release.package.miniz_oxide]
+opt-level = 3
+[profile.release.package.flate2]
+opt-level = 3
+[profile.release.package.crc32fast]
+opt-level = 3
+[profile.release.package.adler2]
+opt-level = 3
+[profile.release.package.simd-adler32]
+opt-level = 3
+[profile.release.package.image]
+opt-level = 3
+[profile.release.package.arboard]
+opt-level = 3
