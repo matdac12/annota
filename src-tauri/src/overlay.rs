@@ -136,6 +136,8 @@ struct Drag {
 struct Session {
     views: Vec<View>,
     drag: Option<Drag>,
+    /// A right-button press went to an Overlay; only its release cancels (not one that began elsewhere).
+    right_pressed: bool,
     hotkey_window: HWND,
     done: Option<Done>,
 }
@@ -161,11 +163,16 @@ pub fn show(captures: Vec<MonitorCapture>, done: Done) -> Result<(), String> {
     let under_cursor = view_under_cursor(&views);
     let windows: Vec<(HWND, bool)> = views.iter().enumerate().map(|(i, v)| (v.hwnd, i == under_cursor)).collect();
     let hotkey_window = views[under_cursor].hwnd;
-    SESSION.with(|s| *s.borrow_mut() = Some(Session { views, drag: None, hotkey_window, done: Some(done) }));
+    SESSION.with(|s| *s.borrow_mut() = Some(Session { views, drag: None, right_pressed: false, hotkey_window, done: Some(done) }));
 
     // SAFETY: handles of windows this thread just made. No session borrow is held: these calls send
     // messages (`WM_PAINT`, ...) straight into `wndproc`.
     unsafe {
+        // Esc cancels even if Windows refuses us the foreground, and from the first frame. A taken
+        // hotkey just leaves `WM_KEYDOWN`.
+        if let Err(e) = RegisterHotKey(Some(hotkey_window), HOTKEY_ID, MOD_NOREPEAT, VK_ESCAPE.0 as u32) {
+            eprintln!("overlay: could not register Esc: {e}");
+        }
         for &(hwnd, focused) in &windows {
             // Paint first, then show; a hidden window has nothing to update, so paint again once it is up.
             let _ = UpdateWindow(hwnd);
@@ -174,10 +181,6 @@ pub fn show(captures: Vec<MonitorCapture>, done: Done) -> Result<(), String> {
         }
         // Never tao's `set_focus`: its fallback injects an Alt into the user's app.
         let _ = SetForegroundWindow(hotkey_window);
-        // Esc cancels even if Windows refused us the foreground. A taken hotkey just leaves WM_KEYDOWN.
-        if let Err(e) = RegisterHotKey(Some(hotkey_window), HOTKEY_ID, MOD_NOREPEAT, VK_ESCAPE.0 as u32) {
-            eprintln!("overlay: could not register Esc: {e}");
-        }
     }
     Ok(())
 }
@@ -202,6 +205,9 @@ fn register_class() -> Result<(), String> {
 /// The window, dimmed copy and back buffer of one monitor.
 fn make_view(capture: MonitorCapture) -> Result<View, String> {
     let r = capture.rect;
+    // The fallible allocations come first: once the window exists, the `View` below owns it.
+    let dimmed = dimmed_copy(&capture.frame)?;
+    let back = Dib::new(r.width(), r.height())?;
     // SAFETY: creates a window on this thread, directly at the monitor's physical rect.
     let hwnd = unsafe {
         let instance = GetModuleHandleW(None).map_err(|e| format!("GetModuleHandleW: {e}"))?;
@@ -221,11 +227,10 @@ fn make_view(capture: MonitorCapture) -> Result<View, String> {
         )
         .map_err(|e| format!("CreateWindowExW at {r:?}: {e}"))?
     };
-    // From here the `View` owns the window: an early return below closes it.
     let view = View {
         hwnd,
-        dimmed: dimmed_copy(&capture.frame)?,
-        back: Dib::new(r.width(), r.height())?,
+        dimmed,
+        back,
         // SAFETY: `hwnd` is the window just made.
         chrome: Chrome::new(unsafe { GetDpiForWindow(hwnd) }.max(96)),
         capture,
@@ -306,17 +311,22 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             end_drag(hwnd);
             return LRESULT(0);
         }
-        // The press is swallowed so the release (which cancels) is the only right-click that counts.
-        WM_RBUTTONDOWN => return LRESULT(0),
+        // The press is swallowed, and its release cancels: the click never reaches the app underneath.
+        WM_RBUTTONDOWN => {
+            with_session(|session| session.right_pressed = true);
+            return LRESULT(0);
+        }
         WM_RBUTTONUP => {
-            finish(false);
+            if with_session(|session| session.right_pressed) == Some(true) {
+                finish(false);
+            }
             return LRESULT(0);
         }
         WM_KEYDOWN if wparam.0 == VK_ESCAPE.0 as usize => {
             finish(false);
             return LRESULT(0);
         }
-        WM_HOTKEY => {
+        WM_HOTKEY if wparam.0 == HOTKEY_ID as usize => {
             finish(false);
             return LRESULT(0);
         }

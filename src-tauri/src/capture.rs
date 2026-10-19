@@ -13,7 +13,7 @@ use std::ptr;
 
 use windows::Win32::Foundation::{LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{
-    BitBlt, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, EnumDisplayMonitors, GetDC,
+    BitBlt, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, EnumDisplayMonitors, GdiFlush, GetDC,
     GetMonitorInfoW, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP,
     HDC, HGDIOBJ, HMONITOR, MONITORINFO, SRCCOPY,
 };
@@ -59,8 +59,11 @@ impl Dib {
             let bitmap = match CreateDIBSection(Some(dc), &info, DIB_RGB_COLORS, &mut bits, None, 0) {
                 Ok(bitmap) if !bits.is_null() => bitmap,
                 result => {
+                    if let Ok(bitmap) = result {
+                        let _ = DeleteObject(bitmap.into());
+                    }
                     let _ = DeleteDC(dc);
-                    return Err(format!("CreateDIBSection {width}x{height} failed: {:?}", result.err()));
+                    return Err(format!("CreateDIBSection {width}x{height} failed"));
                 }
             };
             let previous = SelectObject(dc, bitmap.into());
@@ -158,6 +161,8 @@ pub fn grab_all() -> Result<Vec<MonitorCapture>, String> {
                 Ok(MonitorCapture { rect, frame })
             })
             .collect();
+        // GDI batches its calls; the DIBs' memory is read directly from here on.
+        let _ = GdiFlush();
         ReleaseDC(None, screen);
         grabbed
     }
