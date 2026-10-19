@@ -1,0 +1,25 @@
+[package]
+name = "annota"
+version = "0.1.0"
+description = "Annota: annotated screenshots to paste into agent chats"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+
+[target.'cfg(windows)'.dependencies]
+# Already in the tree via wry; used to lower the hidden Editor's memory target.
+webview2-com = "0.39"
+windows-core = "0.62"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
