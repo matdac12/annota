@@ -16,6 +16,8 @@ tauri = { version = "2", features = ["tray-icon"] }
 # Already in the tree via wry; used to lower the hidden Editor's memory target.
 webview2-com = "0.39"
 windows-core = "0.62"
+# Autostart's registry reads and writes (already in the tree via tauri).
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Registry"] }
 
 [profile.release]
 codegen-units = 1

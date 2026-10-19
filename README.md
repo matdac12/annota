@@ -27,12 +27,38 @@ stable Rust toolchain, and the WebView2 runtime (already on Windows 11).
 pnpm install
 pnpm tauri dev      # starts in the tray, no window; left-click / Snap logs start_snap
 pnpm build:exe      # vite build + tauri build --no-bundle -> src-tauri/target/release/annota.exe
+pnpm build:installer # vite build + tauri build --bundles nsis -> the per-user setup (see Install)
 pnpm check          # typecheck, front-end tests, vite build, cargo test, cargo clippy -D warnings
 ```
 
 `pnpm tauri dev` runs the debug build, which keeps a console so `start_snap` shows
 there; the release exe has no console. Pull requests run the same checks in
 GitHub Actions (`.github/workflows/ci.yml`). There is no release pipeline.
+
+## Install
+
+```
+pnpm build:installer
+```
+
+writes `src-tauri/target/release/bundle/nsis/Annota_<version>_x64-setup.exe`: a per-user NSIS
+installer, unsigned (SmartScreen may warn on the first run), no administrator rights. The first
+build downloads NSIS into Tauri's cache.
+
+- **Install:** run the setup (`/S` installs silently). It installs
+  `%LOCALAPPDATA%\Annota\annota.exe` with a Start menu entry; the finish page starts Annota.
+  Hyperkey's Caps+S runs `%LOCALAPPDATA%\Annota\annota.exe --snap`.
+- **Start with Windows:** the first time the installed exe runs, it writes
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value `Annota` = `"<exe>"` and records that in
+  `HKCU\Software\Annota` (`AutostartInitialized`). After that the tray's **Start with Windows**
+  checkbox is the switch: ticked when the Run value exists and Task Manager's Startup apps hasn't
+  disabled it. Unticking deletes the Run value and sticks across upgrades and reinstalls. A debug
+  build (`pnpm tauri dev`) never registers itself and shows the checkbox greyed out.
+- **Upgrade:** there is no updater. Rebuild, then run the newer setup. It closes the running Annota,
+  replaces the files, and its finish page starts Annota again. Your Start with Windows choice is kept.
+- **Uninstall:** Settings → Apps → Annota (or `%LOCALAPPDATA%\Annota\uninstall.exe`). It removes the
+  Run value, the Task Manager entry (`…\Explorer\StartupApproved\Run`, value `Annota`) and
+  `HKCU\Software\Annota`. Annota keeps nothing else on disk.
 
 ## For agents
 
