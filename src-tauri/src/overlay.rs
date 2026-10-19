@@ -183,6 +183,7 @@ pub fn show(captures: Vec<MonitorCapture>, done: Done) -> Result<(), String> {
         // Never tao's `set_focus`: its fallback injects an Alt into the user's app.
         let _ = SetForegroundWindow(hotkey_window);
     }
+    timings::mark("overlay_up");
     Ok(())
 }
 

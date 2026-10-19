@@ -8,7 +8,7 @@
 //! - second process: `proc_main` (entry of `main()`), `proc_sent` (just before `WM_COPYDATA`)
 //! - `ahk_key`: `hyper.ahk` at the hotkey entry, handed over as `--qpc=<ticks>`
 //! - `callback`: top of the single-instance callback in the Resident
-//! - `grab_start`, `blit` (one per monitor), `grab_done`
+//! - `grab_start`, `blit` (one per monitor), `grab_done`, `overlay_up` (dimmed copies made, windows shown)
 //! - `mouse_up`, `region` (cropped, Overlay gone), `deliver` (pixels handed to the page)
 //! - page: `page_bytes` (`next_snap` answered), `page_drawn` (`putImageData` done), `page_frame`
 //!   (a frame presented), then `painted` (Rust got `editor_painted`), `shown` (Editor shown and focused)
