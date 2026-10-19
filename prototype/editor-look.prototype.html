@@ -1,0 +1,709 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE · Annota Editor look (ANNOTA-7)</title>
+<!--
+  PROTOTYPE: throwaway, never merged. Answers ANNOTA-7 "What should Boxes, the Note field and Callouts look like?"
+
+  Three variants of the Editor, each a coherent Box + Note field + Callout style, switchable with
+  ?variant=A|B|C, the floating bar at the bottom, or the left/right arrow keys.
+  Screenshot: ?size=crop|1920|2560|4k (synthetic, with seeded notes), or paste (Ctrl+V) / drop / load your own.
+
+  Run: double-click this file (Chrome, Edge or Brave). Nothing is saved; reload resets.
+  Everything on the canvas is exactly what Ctrl+C copies (same render function, minus the selection handles).
+-->
+<style>
+  :root { --red:#e5484d; --ui:"Segoe UI", system-ui, sans-serif; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; }
+  body { background:#2a2a2f; color:#e8e8ec; font:13px/1.4 var(--ui); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px 24px 80px; overflow:auto; }
+  #stage { position:relative; flex:none; box-shadow:0 8px 30px rgba(0,0,0,.45); }
+  #cv { display:block; cursor:crosshair; }
+  #overlay { position:absolute; inset:0; pointer-events:none; }
+  #overlay > * { pointer-events:auto; }
+  #hint { margin-top:10px; color:#a8a8b3; font-size:12px; letter-spacing:.01em; }
+  #hint b { color:#dcdce2; font-weight:600; }
+
+  /* Note field, variant A: white card under the Box */
+  .card { position:absolute; background:#fff; color:#16161a; border:1px solid #d1d1d8; border-radius:8px; box-shadow:0 6px 22px rgba(0,0,0,.28); padding:8px 10px 6px; }
+  .card .head { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:#55555f; margin-bottom:4px; }
+  .card .num { width:18px; height:18px; border-radius:50%; background:var(--red); color:#fff; font-size:11px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
+  .card textarea { width:100%; border:0; outline:0; resize:none; font:14px/1.4 var(--ui); color:#16161a; background:transparent; padding:0; max-height:40vh; overflow:auto; display:block; }
+  .card .foot { margin-top:4px; font-size:11px; color:#8a8a94; display:flex; justify-content:space-between; gap:8px; }
+  /* variant C: side card with a red accent edge */
+  .card.side { border-left:4px solid var(--red); border-radius:6px; }
+  .card.side .head .live { margin-left:auto; font-weight:400; color:#8a8a94; }
+
+  /* Note field, variant B: typing happens inside the Callout itself */
+  textarea.inplace { position:absolute; border:0; outline:2px solid #0a84ff; outline-offset:1px; resize:none; overflow:hidden; color:#1a1600; caret-color:#000; margin:0; white-space:pre-wrap; overflow-wrap:anywhere; box-shadow:0 4px 18px rgba(0,0,0,.3); }
+  .inplace-num { position:absolute; color:#fff; font-weight:700; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+
+  /* prototype chrome: deliberately not part of the design */
+  #panel { position:fixed; top:12px; right:12px; width:300px; background:#111114; color:#d8d8de; border:1px solid #3c3c46; border-radius:10px; font:12px/1.45 Consolas, ui-monospace, monospace; box-shadow:0 8px 24px rgba(0,0,0,.5); z-index:50; }
+  #panel header { display:flex; align-items:center; justify-content:space-between; padding:7px 10px; background:#ff3b8a; color:#fff; font-weight:700; border-radius:9px 9px 0 0; cursor:pointer; user-select:none; }
+  #panel.collapsed .body { display:none; }
+  #panel.collapsed header { border-radius:9px; }
+  #panel .body { padding:8px 10px 10px; display:flex; flex-direction:column; gap:7px; max-height:calc(100vh - 70px); overflow:auto; }
+  #panel label { display:flex; flex-direction:column; gap:2px; color:#9a9aa6; }
+  #panel label span.v { color:#fff; }
+  #panel select, #panel button, #panel input[type=file] { font:12px var(--ui); }
+  #panel select { background:#1f1f25; color:#eee; border:1px solid #3c3c46; border-radius:5px; padding:3px; }
+  #panel .row { display:flex; gap:6px; flex-wrap:wrap; }
+  #panel button { background:#24242c; color:#eee; border:1px solid #44444f; border-radius:5px; padding:4px 8px; cursor:pointer; }
+  #panel button:hover { background:#30303a; }
+  #panel input[type=range] { width:100%; }
+  #readout { white-space:pre-wrap; color:#b8f5c8; background:#0a0a0c; border-radius:6px; padding:6px 7px; font-size:11px; }
+
+  #switcher { position:fixed; left:50%; bottom:16px; transform:translateX(-50%); display:flex; align-items:center; gap:4px; background:#ff3b8a; color:#fff; border-radius:999px; padding:4px; box-shadow:0 6px 20px rgba(0,0,0,.5); z-index:60; font:600 13px var(--ui); user-select:none; }
+  #switcher button { all:unset; cursor:pointer; width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:16px; }
+  #switcher button:hover { background:rgba(255,255,255,.2); }
+  #switcher .lbl { padding:0 10px; white-space:nowrap; }
+
+  #toast { position:fixed; top:14px; left:50%; transform:translateX(-50%); background:#111114; color:#fff; border:1px solid #44444f; padding:7px 14px; border-radius:8px; z-index:70; opacity:0; transition:opacity .2s; pointer-events:none; max-width:70vw; text-align:center; }
+  #toast.on { opacity:1; }
+
+  #agentview { position:fixed; inset:0; background:rgba(10,10,12,.92); z-index:80; overflow:auto; display:flex; flex-direction:column; align-items:center; padding:20px; gap:10px; }
+  #agentview[hidden] { display:none; }
+  #agentview p { margin:0; color:#ddd; max-width:900px; text-align:center; }
+  #agentview canvas { flex:none; box-shadow:0 0 0 1px #555; }
+  #drop { position:fixed; inset:0; border:4px dashed #ff3b8a; background:rgba(255,59,138,.08); z-index:90; display:none; align-items:center; justify-content:center; font-size:22px; }
+  body.dragging #drop { display:flex; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="cv"></canvas><div id="overlay"></div></div>
+<div id="hint"></div>
+
+<div id="panel">
+  <header id="panelHead"><span>PROTOTYPE · ANNOTA-7</span><span id="collapseIcon">–</span></header>
+  <div class="body">
+    <label>Screenshot
+      <select id="sizeSel">
+        <option value="crop">Small crop 640×360</option>
+        <option value="1920">Laptop 1920×1200 (100%)</option>
+        <option value="2560">2560×1440 (100%)</option>
+        <option value="4k">LG 4K 3840×2160 (150%)</option>
+        <option value="own" disabled>Your own (paste / drop / load)</option>
+      </select>
+    </label>
+    <div class="row"><input type="file" id="fileIn" accept="image/*"></div>
+    <label>Callout text after shrink to 1,568 px: <span class="v" id="tgtV"></span>
+      <input type="range" id="tgt" min="10" max="18" step="1">
+    </label>
+    <label>Callout width cap: <span class="v" id="capV"></span>
+      <input type="range" id="cap" min="14" max="44" step="1">
+    </label>
+    <label>Agent view (what the model sees)
+      <select id="agentSel"><option value="">Off</option><option value="1568">Shrink to 1,568 long edge</option><option value="2576">Shrink to 2,576 long edge</option></select>
+    </label>
+    <div class="row">
+      <button id="copyBtn">Copy PNG (Ctrl+C)</button>
+      <button id="dlBtn">Download PNG</button>
+    </div>
+    <div class="row">
+      <button id="seedBtn">Reseed notes</button>
+      <button id="dictBtn">Simulate dictation</button>
+    </div>
+    <div id="readout"></div>
+  </div>
+</div>
+
+<div id="switcher"><button id="prevV" title="Previous variant (←)">‹</button><span class="lbl" id="vLabel"></span><button id="nextV" title="Next variant (→)">›</button></div>
+<div id="toast"></div>
+<div id="agentview" hidden><p id="avCap"></p><canvas id="avCv"></canvas></div>
+<div id="drop">Drop a screenshot</div>
+
+<script>
+const FAM = '"Segoe UI", system-ui, sans-serif';
+const RED = '#e5484d';
+const VARIANTS = {
+  A: 'Sticky: note card below, Callout with a gap',
+  B: 'Tag: type inside the Callout, flush to the Box',
+  C: 'Pointer: side field, live speech-bubble Callout',
+};
+const KEYS = Object.keys(VARIANTS);
+const SIZES = { crop:{w:640,h:360,s:1}, '1920':{w:1920,h:1200,s:1}, '2560':{w:2560,h:1440,s:1}, '4k':{w:3840,h:2160,s:1.5} };
+const SEEDS = [
+  ['side', 'Selected ANNOTA, but the board still lists PARLA issues'],
+  ['row', 'This row is bold but not selected. The highlight should follow the open issue, and clicking it twice should not open two panels side by side'],
+  ['pill', ''],
+  ['save', 'Save stays disabled after I edit the title'],
+  ['toggle', 'Should default to on'],
+  ['search', 'Ctrl K opens the browser address bar instead'],
+  ['status', 'Version is wrong, should read v1.0.0'],
+];
+const DICTATION = 'Quando premo salva il titolo non viene aggiornato nella lista a sinistra finché non ricarico la pagina, e il pulsante resta grigio anche dopo aver modificato la descrizione';
+
+const params = new URLSearchParams(location.search);
+const state = {
+  variant: KEYS.includes(params.get('variant')) ? params.get('variant') : 'A',
+  size: SIZES[params.get('size')] ? params.get('size') : '1920',
+  img: null, W: 0, H: 0, rects: {},
+  boxes: [], sel: -1, editing: -1,
+  target: 14, capEm: 26, k: 1, zoom: 1,
+};
+let drag = null;
+
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const overlay = document.getElementById('overlay');
+const mctx = document.createElement('canvas').getContext('2d');
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// ---------- sizing: everything scales with the capture so it survives the agent's shrink ----------
+function metrics() {
+  const L = Math.max(state.W, state.H);
+  const F = Math.max(16, Math.round(state.target * L / 1568));
+  const S = Math.max(2, Math.round(F / 7));
+  const D = Math.round(F * 1.45);
+  const m = { L, F, S, D, pad: Math.round(F * .45), padX: Math.round(F * .6), lh: Math.round(F * 1.3), margin: Math.round(F * .5) };
+  m.cap = Math.min(state.W - 2 * m.margin, Math.round(state.capEm * F));
+  return m;
+}
+const calloutFont = m => `${state.variant === 'B' ? 600 : 500} ${m.F}px ${FAM}`;
+
+function wrap(g, text, maxW) {
+  const out = [];
+  for (const para of text.split('\n')) {
+    let line = '';
+    for (let word of para.split(' ')) {
+      const test = line ? line + ' ' + word : word;
+      if (g.measureText(test).width <= maxW) { line = test; continue; }
+      if (line) out.push(line);
+      while (g.measureText(word).width > maxW && word.length > 1) {
+        let n = word.length - 1;
+        while (n > 1 && g.measureText(word.slice(0, n)).width > maxW) n--;
+        out.push(word.slice(0, n)); word = word.slice(n);
+      }
+      line = word;
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+const nb = b => ({ x: Math.min(b.x, b.x + b.w), y: Math.min(b.y, b.y + b.h), w: Math.abs(b.w), h: Math.abs(b.h), note: b.note });
+
+// Where the Box's number decoration sits, so a Callout placed above can clear it.
+function badgeAbove(b, m) {
+  if (state.variant === 'B') return b.y - m.S / 2 - m.D >= 0 ? m.D : 0;
+  return m.D / 2;
+}
+function bTag(g, b, i, m) {
+  g.font = `700 ${Math.round(m.F * .8)}px ${FAM}`;
+  const tw = Math.max(m.D, g.measureText(String(i + 1)).width + m.F * .7), th = m.D;
+  let ty = b.y - m.S / 2 - th; if (ty < 0) ty = b.y - m.S / 2;
+  return { x: clamp(b.x - m.S / 2, 0, state.W - tw), y: ty, w: tw, h: th };
+}
+
+// Under its Box, or above if there's no room below, clamped inside the image. Overlaps allowed.
+function calloutLayout(g, b, i, m, textOverride) {
+  const v = state.variant, n = String(i + 1);
+  let lead;
+  if (v === 'A') { g.font = `700 ${m.F}px ${FAM}`; lead = g.measureText(n + '.').width + m.F * .35; }
+  else if (v === 'B') { g.font = `700 ${Math.round(m.F * .8)}px ${FAM}`; lead = Math.max(m.D, g.measureText(n).width + m.F * .7); }
+  else lead = m.D * .8 + m.F * .4;
+  g.font = calloutFont(m);
+  const text = textOverride ?? b.note;
+  const lines = wrap(g, text, m.cap - lead - 2 * m.padX);
+  const textW = Math.max(m.F, ...lines.map(l => g.measureText(l).width));
+  const w = Math.ceil(lead + textW + 2 * m.padX);
+  const h = Math.max(lines.length * m.lh + 2 * m.pad, v === 'C' ? m.D * .8 + 2 * m.pad : 0);
+  const gap = v === 'A' ? Math.round(m.F * .4) : v === 'B' ? 0 : Math.round(m.F * .9);
+  const x = clamp(b.x - (v === 'B' ? m.S / 2 : 0), m.margin, Math.max(m.margin, state.W - w - m.margin));
+  let y = b.y + b.h + m.S / 2 + gap, side = 'below';
+  if (y + h > state.H - m.margin) {
+    y = b.y - m.S / 2 - gap - badgeAbove(b, m) - h; side = 'above';
+    if (y < m.margin) { y = state.H - m.margin - h; side = 'inside'; }
+  }
+  return { x, y, w, h, lines, lead, side, gap };
+}
+
+// ---------- drawing ----------
+function circleBadge(g, cx, cy, r, n, m, ring) {
+  g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fillStyle = RED; g.fill();
+  if (ring) { g.lineWidth = ring; g.strokeStyle = '#fff'; g.stroke(); }
+  g.fillStyle = '#fff'; g.font = `700 ${Math.round(r * 1.15)}px ${FAM}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(n, cx, cy + r * .05); g.textAlign = 'left';
+}
+
+function drawBox(g, b, i, m, preview) {
+  const n = String(i + 1), v = state.variant;
+  g.save();
+  if (preview) g.setLineDash([m.S * 3, m.S * 2]);
+  if (v === 'A') {
+    g.fillStyle = 'rgba(229,72,77,.07)'; g.fillRect(b.x, b.y, b.w, b.h);
+    g.lineWidth = m.S; g.strokeStyle = RED; g.beginPath(); g.roundRect(b.x, b.y, b.w, b.h, m.S); g.stroke();
+    g.setLineDash([]);
+    const r = m.D / 2; circleBadge(g, clamp(b.x, r, state.W - r), clamp(b.y, r, state.H - r), r, n, m, 0);
+  } else if (v === 'B') {
+    g.lineWidth = m.S; g.strokeStyle = RED; g.strokeRect(b.x, b.y, b.w, b.h);
+    g.setLineDash([]);
+    const t = bTag(g, b, i, m);
+    g.fillStyle = RED; g.fillRect(t.x, t.y, t.w, t.h);
+    g.fillStyle = '#fff'; g.font = `700 ${Math.round(m.F * .8)}px ${FAM}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(n, t.x + t.w / 2, t.y + t.h / 2 + m.F * .03); g.textAlign = 'left';
+  } else {
+    const r = Math.round(m.F * .35);
+    g.lineJoin = 'round';
+    g.lineWidth = m.S + 2 * Math.max(1.5, m.S * .6); g.strokeStyle = 'rgba(255,255,255,.95)'; g.beginPath(); g.roundRect(b.x, b.y, b.w, b.h, r); g.stroke();
+    g.lineWidth = m.S; g.strokeStyle = RED; g.stroke();
+    g.setLineDash([]);
+    const rr = m.D / 2; circleBadge(g, clamp(b.x + b.w, rr, state.W - rr), clamp(b.y, rr, state.H - rr), rr, n, m, Math.max(2, m.S * .7));
+  }
+  g.restore();
+}
+
+function bubblePath(g, x, y, w, h, r, side, px, pw, ph) {
+  g.beginPath(); g.moveTo(x + r, y);
+  if (side === 'below') { g.lineTo(px - pw / 2, y); g.lineTo(px, y - ph); g.lineTo(px + pw / 2, y); }
+  g.lineTo(x + w - r, y); g.arcTo(x + w, y, x + w, y + r, r);
+  g.lineTo(x + w, y + h - r); g.arcTo(x + w, y + h, x + w - r, y + h, r);
+  if (side === 'above') { g.lineTo(px + pw / 2, y + h); g.lineTo(px, y + h + ph); g.lineTo(px - pw / 2, y + h); }
+  g.lineTo(x + r, y + h); g.arcTo(x, y + h, x, y + h - r, r);
+  g.lineTo(x, y + r); g.arcTo(x, y, x + r, y, r); g.closePath();
+}
+
+function drawCallout(g, b, i, m) {
+  const L = calloutLayout(g, b, i, m), n = String(i + 1), v = state.variant;
+  const firstY = L.y + (L.h - L.lines.length * m.lh) / 2 + m.lh / 2;
+  const textX = L.x + L.lead + m.padX;
+  g.save(); g.textBaseline = 'middle';
+  if (v === 'A') {
+    g.shadowColor = 'rgba(0,0,0,.2)'; g.shadowBlur = m.F * .5; g.shadowOffsetY = m.F * .12;
+    g.fillStyle = '#fff6c7'; g.beginPath(); g.roundRect(L.x, L.y, L.w, L.h, m.F * .2); g.fill();
+    g.shadowColor = 'transparent'; g.lineWidth = Math.max(1, m.F / 16); g.strokeStyle = '#dcc860'; g.stroke();
+    g.fillStyle = RED; g.font = `700 ${m.F}px ${FAM}`; g.fillText(n + '.', L.x + m.padX, firstY);
+    g.fillStyle = '#3d3200';
+  } else if (v === 'B') {
+    g.fillStyle = '#ffe14d'; g.fillRect(L.x, L.y, L.w, L.h);
+    g.fillStyle = RED; g.fillRect(L.x, L.y, L.lead, L.h);
+    g.fillStyle = '#fff'; g.font = `700 ${Math.round(m.F * .8)}px ${FAM}`; g.textAlign = 'center';
+    g.fillText(n, L.x + L.lead / 2, firstY); g.textAlign = 'left';
+    g.fillStyle = '#1a1600';
+  } else {
+    const px = clamp(b.x + b.w / 2, L.x + m.F * 1.2, L.x + L.w - m.F * 1.2);
+    g.shadowColor = 'rgba(0,0,0,.22)'; g.shadowBlur = m.F * .6; g.shadowOffsetY = m.F * .15;
+    bubblePath(g, L.x, L.y, L.w, L.h, m.F * .45, L.side, px, m.F * .9, L.gap * .8);
+    g.fillStyle = '#fff3a6'; g.fill();
+    g.shadowColor = 'transparent'; g.lineWidth = Math.max(1.5, m.F / 14); g.strokeStyle = '#1d1d22'; g.lineJoin = 'round'; g.stroke();
+    circleBadge(g, L.x + m.padX + m.D * .4, firstY, m.D * .4, n, m, 0);
+    g.fillStyle = '#16161a';
+  }
+  g.font = calloutFont(m);
+  L.lines.forEach((t, k) => g.fillText(t, textX, firstY + k * m.lh));
+  g.restore();
+  return L;
+}
+
+function corners(b) { return [['nw', b.x, b.y], ['ne', b.x + b.w, b.y], ['sw', b.x, b.y + b.h], ['se', b.x + b.w, b.y + b.h]]; }
+
+function drawSelection(g, b, m) {
+  const o = m.S / 2 + 3 / state.k, hs = 9 / state.k;
+  g.save(); g.lineWidth = 1.5 / state.k; g.strokeStyle = '#0a84ff'; g.setLineDash([5 / state.k, 4 / state.k]);
+  g.strokeRect(b.x - o, b.y - o, b.w + 2 * o, b.h + 2 * o); g.setLineDash([]);
+  for (const [, x, y] of corners(b)) { g.fillStyle = '#fff'; g.fillRect(x - hs / 2, y - hs / 2, hs, hs); g.strokeRect(x - hs / 2, y - hs / 2, hs, hs); }
+  g.restore();
+}
+
+function drawScene(g, exp) {
+  const m = metrics();
+  g.fillStyle = '#fff'; g.fillRect(0, 0, state.W, state.H);
+  g.drawImage(state.img, 0, 0);
+  state.boxes.forEach((b, i) => drawBox(g, nb(b), i, m));
+  if (!exp && drag?.mode === 'draw' && drag.moved) drawBox(g, nb(drag.rect), state.boxes.length, m, true);
+  state.boxes.forEach((b, i) => {
+    if (!b.note.trim()) return;
+    if (!exp && i === state.editing && state.variant !== 'C') return; // A and B show the field instead
+    drawCallout(g, nb(b), i, m);
+  });
+  if (!exp && state.sel >= 0 && state.boxes[state.sel]) drawSelection(g, nb(state.boxes[state.sel]), m);
+}
+
+function render() {
+  drawScene(ctx, false);
+  if (state.editing >= 0 && state.variant === 'B') placeInplace();
+  updateHint(); updateReadout();
+}
+
+// ---------- the Editor window: 100% unless it wouldn't fit 90% of the screen ----------
+function layoutStage() {
+  const dpr = devicePixelRatio || 1;
+  const w100 = state.W / dpr, h100 = state.H / dpr;
+  state.zoom = Math.min(1, innerWidth * .9 / w100, (innerHeight - 110) * .9 / h100);
+  const cssW = w100 * state.zoom;
+  state.k = cssW / state.W;
+  cv.width = state.W; cv.height = state.H;
+  cv.style.width = cssW + 'px'; cv.style.height = state.H * state.k + 'px';
+}
+
+function updateHint() {
+  const n = state.boxes.length;
+  $('hint').innerHTML = `<b>${n} note${n === 1 ? '' : 's'}</b> · Caps+S / Ctrl+C copy · Esc discard`;
+}
+
+function updateReadout() {
+  const m = metrics(), L = m.L;
+  const at = t => L > t ? `${(m.F * t / L).toFixed(1)} px` : `${m.F} px (not shrunk)`;
+  const lines = [
+    `variant   ${state.variant}`,
+    `image     ${state.W}×${state.H}`,
+    `editor    ${state.zoom >= .999 ? '100% (1 image px per screen px)' : Math.round(state.zoom * 100) + '% (scaled to fit)'}`,
+    `callout   ${m.F} px text · cap ${m.cap} px`,
+    `box       stroke ${m.S} px · badge ${m.D} px`,
+    `at 1568   ${at(1568)}`,
+    `at 2576   ${at(2576)}`,
+    `selected  ${state.sel >= 0 ? state.sel + 1 : '-'} · editing ${state.editing >= 0 ? state.editing + 1 : '-'}`,
+    '',
+    ...state.boxes.map((b, i) => {
+      const nbx = nb(b);
+      const side = b.note.trim() ? calloutLayout(mctx, nbx, i, m).side : 'no callout';
+      return `${String(i + 1).padStart(2)} ${side.padEnd(10)} ${JSON.stringify(b.note.length > 34 ? b.note.slice(0, 33) + '…' : b.note)}`;
+    }),
+  ];
+  $('readout').textContent = lines.join('\n');
+}
+
+// ---------- Note field: one per variant ----------
+function openEditor(i) {
+  closeEditor(true);
+  state.editing = i; state.sel = i;
+  const b = state.boxes[i], m = metrics(), k = state.k, n = i + 1;
+  let ta;
+  if (state.variant === 'B') {
+    ta = document.createElement('textarea'); ta.className = 'inplace'; ta.rows = 1;
+    const num = document.createElement('div'); num.className = 'inplace-num'; num.textContent = n; num.id = 'inplaceNum';
+    overlay.append(ta, num);
+  } else {
+    const card = document.createElement('div'); card.className = 'card' + (state.variant === 'C' ? ' side' : '');
+    card.innerHTML = `<div class="head"><span class="num">${n}</span>Note${state.variant === 'C' ? '<span class="live">live on the image</span>' : ''}</div>
+      <textarea rows="1" placeholder="Type or dictate…"></textarea>
+      <div class="foot"><span>Enter save · Shift+Enter new line</span><span>Esc close</span></div>`;
+    card.style.width = (state.variant === 'A' ? clamp(m.cap * k, 280, 440) : 300) + 'px';
+    overlay.append(card);
+    ta = card.querySelector('textarea');
+  }
+  ta.id = 'noteField'; ta.value = b.note;
+  ta.addEventListener('input', () => { b.note = ta.value; grow(ta); render(); positionCard(); });
+  ta.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); closeEditor(); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeEditor(); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && ta.selectionStart === ta.selectionEnd) { e.preventDefault(); closeEditor(); copyPng(); }
+  });
+  render(); grow(ta); positionCard();
+  ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+}
+
+function closeEditor(silent) {
+  overlay.replaceChildren();
+  state.editing = -1;
+  if (!silent) render();
+}
+
+function grow(ta) { if (ta.classList.contains('inplace')) return; ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; }
+
+// A: under the Box (where its Callout will land), above if no room. C: beside the Box.
+function positionCard() {
+  const card = overlay.querySelector('.card'); if (!card || state.editing < 0) return;
+  const b = nb(state.boxes[state.editing]), m = metrics(), k = state.k;
+  const sr = cv.getBoundingClientRect(), cw = card.offsetWidth, ch = card.offsetHeight;
+  let left, top;
+  if (state.variant === 'A') {
+    left = b.x * k;
+    top = (b.y + b.h) * k + 10;
+    if (sr.top + top + ch > innerHeight - 70) top = (b.y - m.D / 2) * k - 10 - ch;
+  } else {
+    left = (b.x + b.w + m.D / 2) * k + 14; top = b.y * k - 4;
+    if (sr.left + left + cw > innerWidth - 8) left = b.x * k - 14 - cw;
+  }
+  left = clamp(left, 8 - sr.left, innerWidth - sr.left - cw - 8);
+  top = clamp(top, 8 - sr.top, innerHeight - sr.top - ch - 70);
+  card.style.left = left + 'px'; card.style.top = top + 'px';
+}
+
+// B: the field is the Callout, at its exact spot and scale.
+function placeInplace() {
+  const ta = $('noteField'), num = $('inplaceNum'); if (!ta || !num) return;
+  const b = nb(state.boxes[state.editing]), m = metrics(), k = state.k;
+  const L = calloutLayout(mctx, b, state.editing, m, ta.value || 'Type or dictate…');
+  const w = Math.max(L.w, L.lead + 2 * m.padX + m.F * 10);
+  const vpad = (L.h - L.lines.length * m.lh) / 2;
+  Object.assign(ta.style, {
+    left: L.x * k + 'px', top: L.y * k + 'px', width: (w * k + 3) + 'px', height: L.h * k + 'px',
+    font: `600 ${m.F * k}px ${FAM}`, lineHeight: m.lh * k + 'px',
+    padding: `${vpad * k}px ${m.padX * k}px ${vpad * k}px ${(L.lead + m.padX) * k}px`,
+    background: `linear-gradient(to right, ${RED} 0 ${L.lead * k}px, #ffe14d ${L.lead * k}px)`,
+  });
+  ta.placeholder = 'Type or dictate…';
+  Object.assign(num.style, { left: L.x * k + 'px', top: L.y * k + 'px', width: L.lead * k + 'px', height: (vpad + m.lh) * k + 'px', fontSize: Math.round(m.F * .8) * k + 'px', paddingTop: vpad * k + 'px' });
+  if (ta.scrollHeight > ta.clientHeight + 1) ta.style.height = ta.scrollHeight + 'px';
+}
+
+// ---------- pointer: draw, select, move, resize, double-click to edit ----------
+function toImg(e) { const r = cv.getBoundingClientRect(); return { x: clamp((e.clientX - r.left) / state.k, 0, state.W), y: clamp((e.clientY - r.top) / state.k, 0, state.H) }; }
+const inside = (p, x, y, w, h) => p.x >= x && p.x <= x + w && p.y >= y && p.y <= y + h;
+
+function hitTest(p) {
+  const m = metrics(), tol = 6 / state.k;
+  if (state.sel >= 0) {
+    for (const [c, x, y] of corners(nb(state.boxes[state.sel])))
+      if (Math.abs(p.x - x) <= tol + m.S && Math.abs(p.y - y) <= tol + m.S) return { type: 'handle', i: state.sel, corner: c };
+  }
+  for (let i = state.boxes.length - 1; i >= 0; i--) {
+    const b = nb(state.boxes[i]); if (!b.note.trim()) continue;
+    const L = calloutLayout(mctx, b, i, m); if (inside(p, L.x, L.y, L.w, L.h)) return { type: 'callout', i };
+  }
+  for (let i = state.boxes.length - 1; i >= 0; i--) {
+    const b = nb(state.boxes[i]); if (inside(p, b.x - tol, b.y - tol, b.w + 2 * tol, b.h + 2 * tol)) return { type: 'box', i };
+  }
+  return { type: 'none' };
+}
+
+cv.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  if (state.editing >= 0) closeEditor(true);
+  const p = toImg(e), hit = hitTest(p);
+  if (hit.type === 'handle') drag = { mode: 'resize', i: hit.i, corner: hit.corner, start: p, orig: nb(state.boxes[hit.i]) };
+  else if (hit.type !== 'none') { state.sel = hit.i; drag = { mode: 'move', i: hit.i, start: p, orig: nb(state.boxes[hit.i]) }; }
+  else { state.sel = -1; drag = { mode: 'draw', start: p, rect: { x: p.x, y: p.y, w: 0, h: 0 } }; }
+  cv.setPointerCapture(e.pointerId); render();
+});
+cv.addEventListener('pointermove', e => {
+  const p = toImg(e);
+  if (!drag) { const h = hitTest(p).type; cv.style.cursor = h === 'handle' ? 'nwse-resize' : h === 'none' ? 'crosshair' : 'move'; return; }
+  const dx = p.x - drag.start.x, dy = p.y - drag.start.y;
+  if (Math.abs(dx) * state.k > 3 || Math.abs(dy) * state.k > 3) drag.moved = true;
+  if (drag.mode === 'draw') drag.rect = { x: drag.start.x, y: drag.start.y, w: dx, h: dy };
+  else if (drag.mode === 'move') {
+    const o = drag.orig, b = state.boxes[drag.i];
+    b.x = clamp(o.x + dx, 0, state.W - o.w); b.y = clamp(o.y + dy, 0, state.H - o.h); b.w = o.w; b.h = o.h;
+  } else {
+    const o = drag.orig, b = state.boxes[drag.i], c = drag.corner;
+    const x1 = c.includes('w') ? o.x + dx : o.x, x2 = c.includes('e') ? o.x + o.w + dx : o.x + o.w;
+    const y1 = c.includes('n') ? o.y + dy : o.y, y2 = c.includes('s') ? o.y + o.h + dy : o.y + o.h;
+    Object.assign(b, { x: x1, y: y1, w: x2 - x1, h: y2 - y1 });
+  }
+  render();
+});
+cv.addEventListener('pointerup', () => {
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (d.mode === 'draw') {
+    const r = nb(d.rect);
+    if (r.w * state.k >= 6 && r.h * state.k >= 6) {
+      state.boxes.push({ ...r, note: '' });
+      openEditor(state.boxes.length - 1); return;
+    }
+  } else if (d.mode === 'resize') {
+    const b = state.boxes[d.i]; Object.assign(b, nb(b));
+  }
+  render();
+});
+cv.addEventListener('dblclick', e => { const h = hitTest(toImg(e)); if (h.type === 'box' || h.type === 'callout') openEditor(h.i); });
+cv.addEventListener('contextmenu', e => e.preventDefault());
+
+// ---------- keys ----------
+document.addEventListener('keydown', e => {
+  if (!$('agentview').hidden) { if (e.key === 'Escape') { e.preventDefault(); hideAgent(); } return; }
+  if (e.target.matches('textarea, input, select')) return;
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); cycle(e.key === 'ArrowLeft' ? -1 : 1); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { e.preventDefault(); copyPng(); return; }
+  if (e.key === 'Escape') { discard(); return; }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && state.sel >= 0) { e.preventDefault(); state.boxes.splice(state.sel, 1); state.sel = -1; render(); return; }
+  if (e.key === 'Enter' && state.sel >= 0) { e.preventDefault(); openEditor(state.sel); }
+});
+
+function discard() {
+  state.boxes = []; state.sel = -1; closeEditor();
+  toast('Esc: Snap discarded. (The prototype keeps the screenshot; use “Reseed notes” to get the samples back.)');
+}
+
+// ---------- copy / export: same render as the Editor, no handles ----------
+function exportCanvas() {
+  const c = document.createElement('canvas'); c.width = state.W; c.height = state.H;
+  drawScene(c.getContext('2d'), true); return c;
+}
+async function copyPng() {
+  const c = exportCanvas();
+  const blob = new Promise(res => c.toBlob(res, 'image/png'));
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    toast(`Copied ${state.W}×${state.H} PNG. Paste with Ctrl+V in the Claude desktop app, Alt+V in Claude Code / Codex.`);
+  } catch (err) { toast('Clipboard write failed (' + err.message + '). Use Download PNG.'); }
+}
+function downloadPng() {
+  exportCanvas().toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `annota-proto-${state.variant}-${state.W}x${state.H}.png`; a.click(); });
+}
+
+// ---------- agent view: the export shrunk the way the model will shrink it ----------
+async function showAgent(limit) {
+  const c = exportCanvas(), L = Math.max(state.W, state.H), s = L > limit ? limit / L : 1;
+  const w = Math.round(state.W * s), h = Math.round(state.H * s);
+  const bmp = await createImageBitmap(c, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
+  const av = $('avCv'), dpr = devicePixelRatio || 1;
+  av.width = w; av.height = h; av.style.width = w / dpr + 'px'; av.style.height = h / dpr + 'px';
+  av.getContext('2d').drawImage(bmp, 0, 0);
+  const m = metrics();
+  $('avCap').textContent = `Agent view: ${w}×${h} (long edge ≤ ${limit}${s === 1 ? ', not shrunk' : ''}). Callout text ≈ ${(m.F * s).toFixed(1)} px, Box stroke ≈ ${(m.S * s).toFixed(1)} px. One image pixel per screen pixel. Esc or click to close.`;
+  $('agentview').hidden = false;
+}
+function hideAgent() { $('agentview').hidden = true; $('agentSel').value = ''; }
+$('agentview').addEventListener('click', hideAgent);
+
+// ---------- synthetic screenshots (a fake Traccia board, real text at each scale) ----------
+function fakeUI(W, H, s) {
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+  const R = {};
+  const F = (px, wt = 400) => `${wt} ${Math.round(px * s)}px ${FAM}`;
+  const rect = (x, y, w, h, r, fill, stroke) => { g.beginPath(); g.roundRect(x, y, w, h, r); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.strokeStyle = stroke; g.lineWidth = Math.max(1, s); g.stroke(); } };
+  const text = (t, x, y, px, col, wt) => { g.font = F(px, wt); g.fillStyle = col; g.textBaseline = 'middle'; g.fillText(t, x, y); return g.measureText(t).width; };
+  g.fillStyle = '#f4f4f6'; g.fillRect(0, 0, W, H);
+  const hh = 48 * s;
+  g.fillStyle = '#fff'; g.fillRect(0, 0, W, hh); g.fillStyle = '#e2e2e7'; g.fillRect(0, hh - s, W, s);
+  text('Traccia', 20 * s, hh / 2, 15, '#16161a', 700);
+  text('ANNOTA  ›  v1  ›  Board', 96 * s, hh / 2, 13, '#6b6b76');
+  const sw = 280 * s, sx = W - sw - 20 * s;
+  rect(sx, 10 * s, sw, 28 * s, 6 * s, '#f0f0f3'); text('Search issues…', sx + 12 * s, hh / 2, 13, '#8a8a94'); text('Ctrl K', sx + sw - 52 * s, hh / 2, 12, '#8a8a94');
+  R.search = [sx, 10 * s, sw, 28 * s];
+  const sb = 232 * s;
+  g.fillStyle = '#fff'; g.fillRect(0, hh, sb, H - hh); g.fillStyle = '#e2e2e7'; g.fillRect(sb - s, hh, s, H - hh);
+  ['Inbox', 'My issues', 'Projects', 'ANNOTA', 'PARLA', 'TRACCIA', 'HYPERKEY', 'Milestones', 'Settings'].forEach((t, i) => {
+    const y = hh + 14 * s + i * 34 * s, act = i === 3;
+    if (act) { rect(10 * s, y, sb - 20 * s, 28 * s, 6 * s, '#e8f1fb'); R.side = [10 * s, y, sb - 20 * s, 28 * s]; }
+    text(t, 26 * s, y + 14 * s, 13, act ? '#0067c0' : '#33333a', act ? 600 : 400);
+  });
+  const dw = Math.min(480 * s, W * .34), dx = W - dw;
+  const lx = sb + 24 * s, lw = dx - lx - 24 * s;
+  text('Board', lx, hh + 34 * s, 20, '#16161a', 700);
+  const st = [['Backlog', '#8a8a94'], ['In Progress', '#d97706'], ['Done', '#16a34a'], ['Todo', '#0067c0']];
+  const titles = ['What is Annota v1?', 'Which clipboard formats paste into every agent chat?', 'Which capture path freezes every monitor fastest?', 'How do Tauri windows behave across mixed-DPI monitors?', 'How fast does Caps+S reach a running Annota?', 'What should Boxes, Notes and Callouts look like?', 'Write the spec and slice it into issues', 'How should Hyperkey trigger Annota, warm and cold?'];
+  let y = hh + 64 * s, i = 0;
+  while (y + 44 * s < H - 34 * s) {
+    const [sn, sc] = st[i % 4];
+    rect(lx, y, lw, 40 * s, 6 * s, '#fff', '#e6e6ea');
+    text('ANNOTA-' + (i + 2), lx + 14 * s, y + 20 * s, 12, '#8a8a94');
+    text(titles[i % titles.length], lx + 110 * s, y + 20 * s, 13, '#1d1d22', i === 5 ? 600 : 400);
+    g.font = F(12, 600); const tw = g.measureText(sn).width, px = lx + lw - tw - 34 * s;
+    rect(px, y + 9 * s, tw + 20 * s, 22 * s, 11 * s, sc + '22'); text(sn, px + 10 * s, y + 20 * s, 12, sc, 600);
+    if (i === 5) R.row = [lx, y, lw, 40 * s];
+    if (i === 1) R.pill = [px, y + 9 * s, tw + 20 * s, 22 * s];
+    y += 48 * s; i++;
+  }
+  g.fillStyle = '#fff'; g.fillRect(dx, hh, dw, H - hh); g.fillStyle = '#e2e2e7'; g.fillRect(dx, hh, s, H - hh);
+  const px0 = dx + 24 * s, pw0 = dw - 48 * s;
+  let dy = hh + 26 * s;
+  text('ANNOTA-7 · In Progress', px0, dy, 12, '#8a8a94'); dy += 30 * s;
+  g.font = F(18, 700); for (const l of wrap(g, 'What should Boxes, the Note field and Callouts look like?', pw0)) { text(l, px0, dy, 18, '#16161a', 700); dy += 26 * s; }
+  dy += 8 * s; g.font = F(13);
+  for (const l of wrap(g, 'Judge the Editor on a throwaway canvas prototype with a real screenshot. Box stroke, number badge, the selected state and its handles. Where the Note field opens and how it grows with dictated text. The yellow Callout, its number, placement and width cap, and text that stays readable after agents shrink the image.', pw0)) { text(l, px0, dy, 13, '#3a3a42'); dy += 20 * s; }
+  dy += 16 * s;
+  text('Start with Windows', px0, dy + 11 * s, 13, '#1d1d22', 600);
+  const tx = px0 + pw0 - 40 * s; rect(tx, dy, 40 * s, 22 * s, 11 * s, '#c9c9d1'); g.beginPath(); g.arc(tx + 11 * s, dy + 11 * s, 8 * s, 0, 7); g.fillStyle = '#fff'; g.fill();
+  R.toggle = [tx, dy, 40 * s, 22 * s]; dy += 44 * s;
+  g.font = F(13, 600); const bw = g.measureText('Save changes').width + 28 * s;
+  rect(px0 + pw0 - bw, dy, bw, 32 * s, 6 * s, '#9cc3e8'); text('Save changes', px0 + pw0 - bw + 14 * s, dy + 16 * s, 13, '#fff', 600);
+  R.save = [px0 + pw0 - bw, dy, bw, 32 * s];
+  rect(px0 + pw0 - bw - 90 * s, dy, 80 * s, 32 * s, 6 * s, '#fff', '#d1d1d8'); text('Cancel', px0 + pw0 - bw - 72 * s, dy + 16 * s, 13, '#33333a', 600);
+  g.fillStyle = '#fafafb'; g.fillRect(0, H - 26 * s, W, 26 * s); g.fillStyle = '#e2e2e7'; g.fillRect(0, H - 26 * s, W, s);
+  text('Connected · 9 issues', 14 * s, H - 13 * s, 11, '#6b6b76');
+  g.beginPath(); g.arc(W - 78 * s, H - 13 * s, 4 * s, 0, 7); g.fillStyle = '#16a34a'; g.fill();
+  text('v0.9.3', W - 68 * s, H - 13 * s, 11, '#6b6b76');
+  R.status = [W - 86 * s, H - 22 * s, 72 * s, 18 * s];
+  return { canvas: c, rects: R };
+}
+
+function loadSize(key) {
+  const sz = SIZES[key];
+  let shot;
+  if (key === 'crop') {
+    const full = fakeUI(1920, 1200, 1), sv = full.rects.save;
+    const x0 = clamp(sv[0] + sv[2] - 600, 0, 1920 - sz.w), y0 = clamp(sv[1] + sv[3] + 24 - sz.h, 0, 1200 - sz.h);
+    const c = document.createElement('canvas'); c.width = sz.w; c.height = sz.h;
+    c.getContext('2d').drawImage(full.canvas, -x0, -y0);
+    const rects = {};
+    for (const [n, [x, y, w, h]] of Object.entries(full.rects))
+      if (x >= x0 && y >= y0 && x + w <= x0 + sz.w && y + h <= y0 + sz.h) rects[n] = [x - x0, y - y0, w, h];
+    shot = { canvas: c, rects };
+  } else shot = fakeUI(sz.w, sz.h, sz.s);
+  state.size = key; state.img = shot.canvas; state.W = sz.w; state.H = sz.h; state.rects = shot.rects; state.scale = sz.s;
+  seed(); setParam('size', key); $('sizeSel').value = key;
+  layoutStage(); render();
+}
+
+function seed() {
+  closeEditor(true); state.sel = -1;
+  const p = 6 * (state.scale || 1);
+  state.boxes = SEEDS.filter(([r]) => state.rects[r]).map(([r, note]) => {
+    const [x, y, w, h] = state.rects[r];
+    const bx = clamp(x - p, 0, state.W), by = clamp(y - p, 0, state.H);
+    return { x: bx, y: by, w: Math.min(w + 2 * p, state.W - bx), h: Math.min(h + 2 * p, state.H - by), note };
+  });
+}
+
+function loadImage(file) {
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+    c.getContext('2d').drawImage(img, 0, 0);
+    Object.assign(state, { img: c, W: c.width, H: c.height, rects: {}, boxes: [], sel: -1, size: 'own', scale: 1 });
+    closeEditor(true); $('sizeSel').value = 'own'; setParam('size', null);
+    layoutStage(); render(); toast(`Loaded ${c.width}×${c.height}. Drag to draw a Box.`);
+  };
+  img.src = URL.createObjectURL(file);
+}
+
+// ---------- prototype chrome ----------
+function setParam(k, v) { const u = new URL(location.href); v == null ? u.searchParams.delete(k) : u.searchParams.set(k, v); history.replaceState(null, '', u); }
+function setVariant(v) {
+  const editing = state.editing;
+  state.variant = v; setParam('variant', v);
+  $('vLabel').textContent = `${v} · ${VARIANTS[v]}`;
+  if (editing >= 0) openEditor(editing); else render();
+}
+function cycle(d) { setVariant(KEYS[(KEYS.indexOf(state.variant) + d + KEYS.length) % KEYS.length]); }
+let toastT; function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 3200); }
+
+$('prevV').onclick = () => cycle(-1);
+$('nextV').onclick = () => cycle(1);
+$('panelHead').onclick = () => { $('panel').classList.toggle('collapsed'); $('collapseIcon').textContent = $('panel').classList.contains('collapsed') ? '+' : '–'; };
+$('sizeSel').onchange = e => loadSize(e.target.value);
+$('fileIn').onchange = e => e.target.files[0] && loadImage(e.target.files[0]);
+$('tgt').value = state.target; $('cap').value = state.capEm;
+const syncSliders = () => { $('tgtV').textContent = state.target + ' px'; $('capV').textContent = state.capEm + ' em'; };
+$('tgt').oninput = e => { state.target = +e.target.value; syncSliders(); render(); };
+$('cap').oninput = e => { state.capEm = +e.target.value; syncSliders(); render(); };
+$('agentSel').onchange = e => e.target.value && showAgent(+e.target.value);
+$('copyBtn').onclick = copyPng;
+$('dlBtn').onclick = downloadPng;
+$('seedBtn').onclick = () => { if (state.size === 'own') { toast('Seeds only exist for the synthetic screenshots.'); return; } seed(); render(); };
+$('dictBtn').onclick = () => {
+  let i = state.editing >= 0 ? state.editing : state.sel;
+  if (i < 0) { toast('Select or draw a Box first.'); return; }
+  if (state.editing !== i) openEditor(i);
+  const ta = $('noteField'), words = DICTATION.split(' ');
+  if (ta.value && !ta.value.endsWith(' ')) ta.value += ' ';
+  let w = 0;
+  const tick = () => {
+    if (!document.body.contains(ta) || w >= words.length) return;
+    ta.value += (w ? ' ' : '') + words[w++]; ta.dispatchEvent(new Event('input')); ta.focus();
+    setTimeout(tick, 70);
+  };
+  tick();
+};
+document.addEventListener('paste', e => {
+  if (e.target.matches('textarea, input')) return;
+  const item = [...e.clipboardData.items].find(it => it.type.startsWith('image/'));
+  if (item) { e.preventDefault(); loadImage(item.getAsFile()); }
+});
+addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('dragging'); });
+addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('dragging'); });
+addEventListener('drop', e => { e.preventDefault(); document.body.classList.remove('dragging'); const f = e.dataTransfer.files[0]; if (f?.type.startsWith('image/')) loadImage(f); });
+addEventListener('resize', () => { layoutStage(); if (state.editing >= 0) openEditor(state.editing); else render(); });
+
+syncSliders();
+$('vLabel').textContent = `${state.variant} · ${VARIANTS[state.variant]}`;
+document.fonts.ready.then(() => loadSize(state.size));
+</script>
+</body>
+</html>
