@@ -11,11 +11,22 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
+# Pinned exactly: the `--snap` fast path in `single_instance.rs` reuses its private window names
+# and payload, so an upgrade must be a deliberate change (the test there pins them).
+tauri-plugin-single-instance = "=2.5.4"
 
 [target.'cfg(windows)'.dependencies]
 # Already in the tree via wry; used to lower the hidden Editor's memory target.
 webview2-com = "0.39"
 windows-core = "0.62"
+# The fast path, the Local\ mutex and the elevation trap. Already in the tree via webview2-com.
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_DataExchange",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [profile.release]
 codegen-units = 1

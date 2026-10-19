@@ -34,7 +34,7 @@ fn action_for_click(button: MouseButton, state: MouseButtonState) -> Option<Acti
 
 fn run(app: &AppHandle, action: Action) {
     match action {
-        Action::Snap => snap::start_snap(),
+        Action::Snap => snap::request_snap(app),
         Action::Quit => app.exit(0),
     }
 }
