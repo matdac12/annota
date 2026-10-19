@@ -79,8 +79,31 @@ mod on {
 
     /// Top of the single-instance callback: starts a new row and reads the stamps the second process and
     /// `hyper.ahk` put on the command line.
-    pub fn callback(argv: &[String]) {
+    ///
+    /// Also the remote control for the session: `--dump-timings` puts the ring on the clipboard as text,
+    /// `--clear-timings` empties it, `--captureblt=on|off` sets the grab's blit flag. They are not Snaps:
+    /// the return value says the command line was one of them.
+    pub fn callback(argv: &[String]) -> bool {
         let t = now();
+        for arg in argv {
+            match arg.as_str() {
+                "--dump-timings" => {
+                    if let Err(e) = arboard::Clipboard::new().and_then(|mut c| c.set_text(dump())) {
+                        eprintln!("timings: clipboard: {e}");
+                    }
+                    return true;
+                }
+                "--clear-timings" => {
+                    clear();
+                    return true;
+                }
+                "--captureblt=on" | "--captureblt=off" => {
+                    CAPTUREBLT.store(arg == "--captureblt=on", Ordering::SeqCst);
+                    return true;
+                }
+                _ => {}
+            }
+        }
         SNAP.fetch_add(1, Ordering::SeqCst);
         push("callback", t, 0);
         for arg in argv {
@@ -90,6 +113,7 @@ mod on {
                 }
             }
         }
+        false
     }
 
     /// First line of `main()`.
@@ -199,7 +223,9 @@ mod off {
     #[inline(always)]
     pub fn mark_detail(_name: &'static str, _detail: i64) {}
     #[inline(always)]
-    pub fn callback(_argv: &[String]) {}
+    pub fn callback(_argv: &[String]) -> bool {
+        false
+    }
     #[inline(always)]
     pub fn process_start() {}
     #[inline(always)]

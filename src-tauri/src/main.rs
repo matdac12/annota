@@ -68,7 +68,9 @@ fn main() {
     with_commands(tauri::Builder::default())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // Runs inside `WM_COPYDATA` on the main thread: decide and return.
-            timings::callback(&argv);
+            if timings::callback(&argv) {
+                return;
+            }
             if Launch::parse(argv).snap {
                 snap::request_snap(app);
             }
