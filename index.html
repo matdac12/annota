@@ -47,10 +47,76 @@
         color: #dcdce2;
         font-weight: 600;
       }
+      /* The Note field (spec 7.1, variant A): a white card under its Box. */
+      #overlay {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+      #overlay > * {
+        pointer-events: auto;
+      }
+      .note-card {
+        position: absolute;
+        box-sizing: border-box;
+        background: #fff;
+        color: #16161a;
+        border: 1px solid #d1d1d8;
+        border-radius: 8px;
+        box-shadow: 0 6px 22px rgba(0, 0, 0, 0.28);
+        padding: 8px 10px 6px;
+      }
+      .note-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 4px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #55555f;
+      }
+      .note-num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        min-width: 14px;
+        height: 14px;
+        padding: 0 3px;
+        border-radius: 7px;
+        background: #e5484d;
+        color: #fff;
+        font-size: 9px;
+        font-weight: 700;
+        line-height: 1;
+      }
+      .note-text {
+        display: block;
+        box-sizing: border-box;
+        width: 100%;
+        max-height: 40vh;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        outline: 0;
+        resize: none;
+        overflow: auto;
+        background: transparent;
+        color: #16161a;
+        font: 14px/1.4 "Segoe UI", system-ui, sans-serif;
+      }
+      .note-foot {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 4px;
+        font-size: 11px;
+        color: #8a8a94;
+      }
     </style>
   </head>
   <body>
-    <div id="stage"><canvas id="snap"></canvas></div>
+    <div id="stage"><canvas id="snap"></canvas><div id="overlay"></div></div>
     <div id="hint"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
