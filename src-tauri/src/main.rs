@@ -2,8 +2,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod autostart;
+mod capture;
 mod editor;
+mod geometry;
 mod launch;
+mod overlay;
 mod resident;
 mod single_instance;
 mod snap;

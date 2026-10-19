@@ -4,9 +4,13 @@
 //! [`request_snap`]. It runs on the main thread, inside `WM_COPYDATA` for `--snap`, so it only decides
 //! and starts the work; it never waits on the WebView.
 
+use std::borrow::Cow;
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Manager};
+
+use crate::capture::{self, Region};
+use crate::overlay::{self, Outcome};
 
 /// What the Resident is doing. A `--snap` that arrives while the Resident is still starting (spec §3.1,
 /// "Starting") never gets here: the second process is dropped by the `Local\` mutex.
@@ -15,7 +19,6 @@ pub enum State {
     /// Nothing on screen.
     Idle,
     /// The Overlay is up and the user is dragging a Region.
-    #[allow(dead_code)] // Entered by the Overlay slice (ANNOTA-15).
     Selecting,
     /// The Editor is open on a Region.
     #[allow(dead_code)] // Entered by the Editor slice (ANNOTA-16).
@@ -53,7 +56,6 @@ impl Resident {
         *self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    #[allow(dead_code)] // Called by the Overlay and Editor slices as the Snap moves along.
     pub fn set(&self, state: State) {
         *self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = state;
     }
@@ -72,12 +74,75 @@ pub fn request_snap(app: &AppHandle) {
     }
 }
 
-/// Stub: the grab, the Overlay and the Editor hand-over arrive in later slices. The real one grabs every
-/// monitor first, then moves the Resident to `Selecting` (before returning, so a second request can't
-/// start another Snap) and shows the Overlay. The stub stays `Idle`, so
-/// each request logs.
-pub fn start_snap(_app: &AppHandle) {
-    eprintln!("start_snap");
+/// Starts a Snap (spec §4, §5): grabs every monitor first, then puts the Overlay up.
+///
+/// The Resident is `Selecting` *before this returns*: for `--snap` it runs on the main thread inside
+/// `WM_COPYDATA`, and the next request is only handled after it, so it must already see `Selecting` and be
+/// ignored. The grab and the Overlay's windows belong on the main thread too (`run_on_main_thread` runs
+/// inline when already there), so a request from another thread still grabs before any window shows.
+pub fn start_snap(app: &AppHandle) {
+    let Some(resident) = app.try_state::<Resident>() else {
+        return;
+    };
+    resident.set(State::Selecting);
+    let on_main = app.clone();
+    if app.run_on_main_thread(move || grab_and_select(&on_main)).is_err() {
+        resident.set(State::Idle);
+    }
+}
+
+/// Grab first, show second; any failure leaves the Resident `Idle`.
+fn grab_and_select(app: &AppHandle) {
+    let finished = app.clone();
+    let shown = capture::grab_all()
+        .and_then(|captures| overlay::show(captures, Box::new(move |outcome| selection_ended(&finished, outcome))));
+    if let Err(e) = shown {
+        eprintln!("snap: {e}");
+        set_state(app, State::Idle);
+    }
+}
+
+/// The Overlay is gone. A cancel is back to `Idle`. A Region goes to the clipboard, a tracer bullet until
+/// the Editor takes it from here (ANNOTA-16, which replaces this).
+fn selection_ended(app: &AppHandle, outcome: Outcome) {
+    match outcome {
+        Outcome::Cancelled => set_state(app, State::Idle),
+        Outcome::Selected(region) => {
+            eprintln!(
+                "snap: Region {}x{} at ({}, {}) on the monitor at ({}, {})",
+                region.width(),
+                region.height(),
+                region.screen.left,
+                region.screen.top,
+                region.monitor.left,
+                region.monitor.top
+            );
+            // Off the main thread: arboard encodes a PNG, which takes a while for a big Region. The
+            // Resident stays `Selecting` until it is done, so a second Snap can't start mid-copy.
+            let app = app.clone();
+            std::thread::spawn(move || {
+                if let Err(e) = copy_to_clipboard(&region) {
+                    eprintln!("snap: clipboard: {e}");
+                }
+                set_state(&app, State::Idle);
+            });
+        }
+    }
+}
+
+fn set_state(app: &AppHandle, state: State) {
+    if let Some(resident) = app.try_state::<Resident>() {
+        resident.set(state);
+    }
+}
+
+/// `arboard` writes the "PNG" and `CF_DIBV5` formats (spec §9). The Region's alpha is already 255.
+fn copy_to_clipboard(region: &Region) -> Result<(), arboard::Error> {
+    arboard::Clipboard::new()?.set_image(arboard::ImageData {
+        width: region.width(),
+        height: region.height(),
+        bytes: Cow::Borrowed(&region.rgba),
+    })
 }
 
 /// Stub: renders the Snap, sets the clipboard and closes the Editor (spec §9), in a later slice.
