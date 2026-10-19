@@ -117,3 +117,10 @@ it("picks the cursor: crosshair on empty canvas, move over a Box, resize over a 
   expect(interaction.cursorAt({ x: 200, y: 200 })).toBe("nwse-resize");
   expect(interaction.cursorAt({ x: 200, y: 100 })).toBe("nesw-resize");
 });
+
+it("puts a Box back as it was when a resize leaves it under 6 CSS px", () => {
+  const { scene, drag } = setup();
+  drag([100, 100], [200, 200]);
+  drag([200, 200], [102, 103]);
+  expect(scene.boxes[0]).toMatchObject({ x: 100, y: 100, w: 100, h: 100 });
+});

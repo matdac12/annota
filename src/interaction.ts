@@ -107,9 +107,16 @@ export class Interaction {
     const drag = this.drag;
     this.drag = null;
     this.preview = null;
-    if (drag?.mode !== "draw") return null;
-    const rect = normalize(drag.rect);
+    if (!drag) return null;
     const minimum = MIN_DRAW_CSS_PX / this.cssPerImage();
+    if (drag.mode === "resize") {
+      // A Box dragged down to a sliver would be nearly impossible to grab again: put it back as it was.
+      const box = this.scene.boxes[drag.index];
+      if (box.w < minimum || box.h < minimum) Object.assign(box, drag.original);
+      return null;
+    }
+    if (drag.mode !== "draw") return null;
+    const rect = normalize(drag.rect);
     if (rect.w < minimum || rect.h < minimum) return null;
     this.scene.boxes.push({ ...rect, note: "" });
     this.selected = this.scene.boxes.length - 1;

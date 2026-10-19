@@ -52,3 +52,9 @@ it("Ctrl+C in a Note field copies selected text, and otherwise copies the PNG", 
   expect(press("c", { ...NOTE, textSelected: true }, { ctrlKey: true })).toBeNull();
   expect(press("c", NOTE, { ctrlKey: true })).toBe("copy");
 });
+
+it("opens the selected Box's Note on a plain Enter only", () => {
+  const selected = { ...IDLE, boxSelected: true };
+  expect(press("Enter", selected, { shiftKey: true })).toBeNull();
+  expect(press("Enter", selected, { ctrlKey: true })).toBeNull();
+});

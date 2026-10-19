@@ -34,7 +34,7 @@ export function actionForKey(press: Press, context: KeyContext): EditorKey | nul
   if (copyKey) return "copy";
   if (context.boxSelected) {
     if (press.key === "Delete" || press.key === "Backspace") return "delete";
-    if (press.key === "Enter") return "edit";
+    if (press.key === "Enter" && !press.shiftKey && !press.ctrlKey && !press.altKey) return "edit";
   }
   return null;
 }

@@ -306,6 +306,7 @@ export function startEditor(win: Window & typeof globalThis, page: EditorPage, i
         image.width = width;
         image.height = height;
         image.getContext("2d")!.putImageData(new ImageData(pixels, width, height), 0, 0);
+        closeNote();
         snap = { width, height, image, boxes: [] };
         interaction = new Interaction(snap, cssPerImage);
         if (!observed) box = measure();
