@@ -6,7 +6,7 @@
 
 use tauri::window::Color;
 use tauri::{
-    AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
 
 use crate::capture::Region;
@@ -14,9 +14,13 @@ use crate::commands::Handoff;
 use crate::geometry::{self, Chrome, Rect};
 use crate::snap;
 use crate::timings;
+use crate::transfer::Staged;
 
 /// The Editor's window label; the capability and the Resident's events address it by this.
 pub const LABEL: &str = "editor";
+
+/// Tells the page which way to send its pixels on Ctrl+C (ANNOTA-23).
+const TRANSFER_MODE: &str = "transfer-mode";
 
 /// How the Editor window is built. Pinned by a test: later slices address it by `label`.
 struct Spec {
@@ -88,6 +92,7 @@ pub fn open(app: &AppHandle, region: Region) -> Result<u64, String> {
     let (width, height) = (region.width() as u32, region.height() as u32);
     let handoff = app.state::<Handoff>();
     let token = handoff.expect_paint();
+    app.state::<Staged>().stage(timings::transfer_mode(), width, height, &region.rgba);
     handoff.deliver(geometry::with_dimensions(region.rgba, width, height));
     timings::mark("deliver");
     Ok(token)
@@ -144,6 +149,10 @@ pub fn reveal(app: &AppHandle) {
     }
     // Keyboard focus goes to the page, so Ctrl+C and Esc reach it.
     let _ = window.as_ref().set_focus();
+    // ANNOTA-23: tell the page how to send its pixels, and give it the shared buffer if that is the way.
+    let staged = app.state::<Staged>();
+    let _ = app.emit_to(LABEL, TRANSFER_MODE, staged.mode().code());
+    staged.post_shared(app);
 }
 
 /// Hides the Editor, window and webview, and lets WebView2 trim its memory again.

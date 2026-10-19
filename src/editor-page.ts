@@ -234,7 +234,7 @@ export function startEditor(win: Window & typeof globalThis, page: EditorPage, i
     try {
       const rgba = exportSnap(snap);
       ipc.mark?.("page_exported");
-      await ipc.copy(rgba, snap.width, snap.height);
+      await ipc.copy(rgba, snap.width, snap.height, snap.pixels);
       forget();
     } catch (error) {
       console.error("copy failed", error);
@@ -316,7 +316,7 @@ export function startEditor(win: Window & typeof globalThis, page: EditorPage, i
         image.getContext("2d")!.putImageData(new ImageData(pixels, width, height), 0, 0);
         ipc.mark?.("page_drawn");
         closeNote();
-        snap = { width, height, image, boxes: [] };
+        snap = { width, height, image, boxes: [], pixels };
         const current = snap;
         interaction = new Interaction(current, cssPerImage, () =>
           calloutLayouts(canvasMeasure(measuring, sizingFor(width, height).F), current, interaction?.editing ?? -1),

@@ -35,6 +35,43 @@ INTERVALS = [
 ]
 
 
+# ANNOTA-23: per copy candidate (`copy_mode` = clipboard writer * 10 + transfer).
+CLIP_NAMES = {0: "arboard", 1: "own + fast PNG", 2: "own + stored PNG"}
+TRANSFER_NAMES = {0: "raw", 1: "delta", 2: "shared"}
+COPY_INTERVALS = [
+    ("Ctrl+C -> page packed (delta encode / shared fill)", "copy_key", "page_packed"),
+    ("page exported -> Rust got pixels", "page_exported", "copy_recv"),
+    ("Rust got pixels -> PNG encoded (own writer)", "copy_recv", "png_done"),
+    ("Rust got pixels -> DIBV5 filled (own writer)", "copy_recv", "dib_done"),
+    ("Rust got pixels -> clipboard set", "copy_recv", "clipboard_set"),
+    ("CTRL+C -> CLIPBOARD SET", "copy_key", "clipboard_set"),
+    ("CTRL+C -> CLOSED", "copy_key", "closed"),
+]
+
+
+def copy_table(marks, hz):
+    """Prints the copy intervals once per candidate, from the snaps whose `copy_mode` mark names it."""
+    by_mode = defaultdict(list)
+    for snap, rows in sorted(marks.items()):
+        mode = next((d for n, _, d in reversed(rows) if n == "copy_mode"), None)
+        if mode is not None:
+            by_mode[mode].append(rows)
+    for mode, snaps in sorted(by_mode.items()):
+        print()
+        print(f"copy candidate: clipboard={CLIP_NAMES.get(mode // 10, mode // 10)}, transfer={TRANSFER_NAMES.get(mode % 10, mode % 10)}")
+        print(f"{'interval':64} {'n':>3} {'min':>8} {'p50':>8} {'p95':>8} {'max':>8}")
+        for label, a, b in COPY_INTERVALS:
+            v = []
+            for rows in snaps:
+                end = next((t for n, t, _ in reversed(rows) if n == b), None)
+                start = next((t for n, t, _ in reversed(rows) if n == a and end is not None and t <= end), None)
+                if end is not None and start is not None:
+                    v.append((end - start) * 1000.0 / hz)
+            if v:
+                v.sort()
+                print(f"{label:64} {len(v):3d} {v[0]:8.1f} {percentile(v, .5):8.1f} {percentile(v, .95):8.1f} {v[-1]:8.1f}")
+
+
 def percentile(sorted_values, q):
     if len(sorted_values) == 1:
         return sorted_values[0]
@@ -89,6 +126,7 @@ def main():
         if label.startswith("second process"):
             v = sorted(results[label])
             print(f"{label:64} {len(v):3d} {v[0]:8.1f} {percentile(v, .5):8.1f} {percentile(v, .95):8.1f} {v[-1]:8.1f}")
+    copy_table(marks, hz)
     if blits:
         print("per-monitor blit finish (ms after grab_start, pixels):", ", ".join(f"{m:.1f} ({p/1e6:.1f} MP)" for m, p in blits[:8]), "...")
 

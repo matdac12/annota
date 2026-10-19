@@ -14,15 +14,21 @@
 //!   (a frame presented), then `painted` (Rust got `editor_painted`), `shown` (Editor shown and focused)
 //! - copy: `copy_key` (Ctrl+C in the page), `page_exported` (`getImageData` done), `copy_recv` (Rust got
 //!   the pixels), `clipboard_set`, `closed` (Editor hidden); or `copy_requested` for Caps+S in the Editor
+//! - ANNOTA-23: `copy_mode` (detail = clipboard writer * 10 + transfer, see `--clip` and `--transfer`),
+//!   `shared_posted` (the shared buffer reached the page), `png_done` (the PNG is encoded) and `dib_done`
+//!   (the `CF_DIBV5` block is filled); page: `page_packed` (the delta encoded or the shared buffer filled)
 
 #[cfg(feature = "timings")]
 mod on {
     use std::collections::VecDeque;
     use std::fmt::Write as _;
-    use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU8, Ordering};
     use std::sync::Mutex;
 
     use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
+
+    use crate::clipboard::{PngLevel, Writer};
+    use crate::transfer::Mode;
 
     const CAPACITY: usize = 8192;
 
@@ -38,6 +44,10 @@ mod on {
     static SNAP: AtomicU32 = AtomicU32::new(0);
     static CAPTUREBLT: AtomicBool = AtomicBool::new(false);
     static MAIN_ENTRY: AtomicI64 = AtomicI64::new(0);
+    /// ANNOTA-23's candidates: the clipboard writer (0 arboard, 1 own + fast PNG, 2 own + stored PNG) and
+    /// the pixel transfer (0 raw, 1 delta, 2 shared buffer).
+    static CLIP: AtomicU8 = AtomicU8::new(0);
+    static TRANSFER: AtomicU8 = AtomicU8::new(0);
 
     pub fn now() -> i64 {
         let mut ticks = 0i64;
@@ -71,7 +81,8 @@ mod on {
 
     /// The page's marks arrive by name; only these are accepted.
     pub fn page_mark(name: &str) {
-        const NAMES: [&str; 6] = ["page_bytes", "page_drawn", "page_frame", "copy_key", "page_exported", "page_shown"];
+        const NAMES: [&str; 7] =
+            ["page_bytes", "page_drawn", "page_frame", "copy_key", "page_exported", "page_shown", "page_packed"];
         if let Some(known) = NAMES.iter().find(|n| **n == name) {
             mark(known);
         }
@@ -81,7 +92,8 @@ mod on {
     /// `hyper.ahk` put on the command line.
     ///
     /// Also the remote control for the session: `--dump-timings` puts the ring on the clipboard as text,
-    /// `--clear-timings` empties it, `--captureblt=on|off` sets the grab's blit flag. They are not Snaps:
+    /// `--clear-timings` empties it, `--captureblt=on|off` sets the grab's blit flag, and for ANNOTA-23
+    /// `--clip=arboard|fast|stored` and `--transfer=raw|delta|shared` pick the copy path. They are not Snaps:
     /// the return value says the command line was one of them.
     pub fn callback(argv: &[String]) -> bool {
         let t = now();
@@ -95,6 +107,16 @@ mod on {
                 }
                 "--clear-timings" => {
                     clear();
+                    return true;
+                }
+                "--clip=arboard" | "--clip=fast" | "--clip=stored" => {
+                    let code = ["arboard", "fast", "stored"].iter().position(|n| arg.ends_with(n)).unwrap_or(0);
+                    CLIP.store(code as u8, Ordering::SeqCst);
+                    return true;
+                }
+                "--transfer=raw" | "--transfer=delta" | "--transfer=shared" => {
+                    let code = ["raw", "delta", "shared"].iter().position(|n| arg.ends_with(n)).unwrap_or(0);
+                    TRANSFER.store(code as u8, Ordering::SeqCst);
                     return true;
                 }
                 "--captureblt=on" | "--captureblt=off" => {
@@ -134,6 +156,27 @@ mod on {
 
     pub fn captureblt() -> bool {
         CAPTUREBLT.load(Ordering::SeqCst)
+    }
+
+    pub fn clip_writer() -> Writer {
+        match CLIP.load(Ordering::SeqCst) {
+            1 => Writer::Own(PngLevel::Fast),
+            2 => Writer::Own(PngLevel::Stored),
+            _ => Writer::Arboard,
+        }
+    }
+
+    pub fn transfer_mode() -> Mode {
+        match TRANSFER.load(Ordering::SeqCst) {
+            1 => Mode::Delta,
+            2 => Mode::Shared,
+            _ => Mode::Raw,
+        }
+    }
+
+    /// Names the candidates a copy ran with, for the analysis.
+    pub fn mark_copy_mode() {
+        mark_detail("copy_mode", i64::from(CLIP.load(Ordering::SeqCst)) * 10 + i64::from(TRANSFER.load(Ordering::SeqCst)));
     }
 
     pub fn toggle_captureblt() -> bool {
@@ -218,6 +261,9 @@ pub use on::*;
 
 #[cfg(not(feature = "timings"))]
 mod off {
+    use crate::clipboard::Writer;
+    use crate::transfer::Mode;
+
     #[inline(always)]
     pub fn mark(_name: &'static str) {}
     #[inline(always)]
@@ -238,6 +284,16 @@ mod off {
     pub fn captureblt() -> bool {
         false
     }
+    #[inline(always)]
+    pub fn clip_writer() -> Writer {
+        Writer::Arboard
+    }
+    #[inline(always)]
+    pub fn transfer_mode() -> Mode {
+        Mode::Raw
+    }
+    #[inline(always)]
+    pub fn mark_copy_mode() {}
 }
 
 #[cfg(not(feature = "timings"))]

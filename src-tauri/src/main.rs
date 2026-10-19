@@ -3,6 +3,7 @@
 
 mod autostart;
 mod capture;
+mod clipboard;
 mod commands;
 mod editor;
 mod geometry;
@@ -12,6 +13,7 @@ mod resident;
 mod single_instance;
 mod snap;
 mod timings;
+mod transfer;
 mod tray;
 
 use launch::Launch;
@@ -24,6 +26,8 @@ fn with_commands(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::W
         commands::next_snap,
         commands::editor_painted,
         commands::copy_snap,
+        commands::copy_delta,
+        commands::copy_shared,
         commands::discard_snap,
         commands::timing_mark
     ])
@@ -35,6 +39,8 @@ fn with_commands(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::W
         commands::next_snap,
         commands::editor_painted,
         commands::copy_snap,
+        commands::copy_delta,
+        commands::copy_shared,
         commands::discard_snap
     ])
 }
@@ -77,6 +83,7 @@ fn main() {
         }))
         .manage(snap::Resident::new())
         .manage(commands::Handoff::default())
+        .manage(transfer::Staged::default())
         .setup(|app| {
             tray::build(app)?;
             editor::build(app)?;

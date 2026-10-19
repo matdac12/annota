@@ -33,6 +33,7 @@ windows = { version = "0.62", features = [
     "Win32_Security",
     "Win32_System_DataExchange",
     "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
     "Win32_System_Performance",
     "Win32_System_Threading",
     "Win32_UI_HiDpi",
@@ -41,6 +42,8 @@ windows = { version = "0.62", features = [
 ] }
 # The clipboard: `set_image` writes the "PNG" and CF_DIBV5 formats (spec 9).
 arboard = "3.6"
+# Our own PNG for the clipboard (ANNOTA-23): the crate `arboard` encodes with, at a faster setting.
+png = "0.18"
 # Autostart's registry reads and writes (already in the tree via tauri).
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Registry"] }
 
@@ -50,3 +53,26 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+# ANNOTA-23: the clipboard write (our DIBV5 loop, the PNG encoder and its checksums, `arboard`'s own path) is
+# CPU-bound on 33 MB, and "s" is slow there. Everything else stays small.
+[profile.release.package.annota]
+opt-level = 3
+[profile.release.package.png]
+opt-level = 3
+[profile.release.package.fdeflate]
+opt-level = 3
+[profile.release.package.miniz_oxide]
+opt-level = 3
+[profile.release.package.flate2]
+opt-level = 3
+[profile.release.package.crc32fast]
+opt-level = 3
+[profile.release.package.adler2]
+opt-level = 3
+[profile.release.package.simd-adler32]
+opt-level = 3
+[profile.release.package.image]
+opt-level = 3
+[profile.release.package.arboard]
+opt-level = 3
