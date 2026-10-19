@@ -1,4 +1,5 @@
 import { badgeFor, cornerPoints, type Rect } from "./boxes";
+import { calloutLayouts, canvasMeasure, FAMILY, noteFont, numberFont, type CalloutLayout } from "./callout";
 import { sizingFor, type Sizing } from "./sizing";
 import type { Snap } from "./snap";
 
@@ -8,6 +9,8 @@ export interface RenderOptions {
    * which also shows what is only for editing (a selected Box's outline and handles, the Box being drawn).
    */
   forExport: boolean;
+  /** The Box whose Note field is open, or -1: its Callout is not drawn meanwhile. Editing only. */
+  editing?: number;
   /** The selected Box, or -1. Editing only. */
   selected?: number;
   /** The Box being dragged out, drawn dashed. Editing only. */
@@ -16,19 +19,22 @@ export interface RenderOptions {
   imagePerCss?: number;
 }
 
-const FAMILY = '"Segoe UI", system-ui, sans-serif';
 const RED = "#e5484d";
 const BLUE = "#0a84ff";
 
 /**
  * The one function that draws a Snap, for the Editor's canvas and for the export alike, in image pixels.
- * The caller sets the transform (the Editor fits the image to its window; the export is 1:1). The Callout
- * issue adds Callouts after the Boxes, with the editing-only parts behind `!options.forExport`.
+ * The caller sets the transform (the Editor fits the image to its window; the export is 1:1). Callouts come
+ * after all the Boxes and badges; the editing-only parts come last, behind `options.forExport`.
  */
 export function renderSnap(ctx: CanvasRenderingContext2D, snap: Snap, options: RenderOptions): void {
   ctx.drawImage(snap.image, 0, 0);
   const sizing = sizingFor(snap.width, snap.height);
   snap.boxes.forEach((box, index) => drawBox(ctx, box, index + 1, sizing, snap));
+  const editing = options.forExport ? -1 : (options.editing ?? -1);
+  for (const callout of calloutLayouts(canvasMeasure(ctx, sizing.F), snap, editing)) {
+    if (callout) drawCallout(ctx, callout, sizing);
+  }
   if (options.forExport) return;
   if (options.preview) drawBox(ctx, options.preview, snap.boxes.length + 1, sizing, snap, true);
   const selected = snap.boxes[options.selected ?? -1];
@@ -76,5 +82,34 @@ function drawSelection(ctx: CanvasRenderingContext2D, box: Rect, sizing: Sizing,
     ctx.fillRect(at.x - handle / 2, at.y - handle / 2, handle, handle);
     ctx.strokeRect(at.x - handle / 2, at.y - handle / 2, handle, handle);
   }
+  ctx.restore();
+}
+
+/** A Callout (spec 8.3): a yellow sticky with the red number, then the Note hanging-indented beside it. */
+function drawCallout(ctx: CanvasRenderingContext2D, callout: CalloutLayout, sizing: Sizing): void {
+  const { F } = sizing;
+  const lineHeight = Math.round(1.3 * F);
+  const padX = Math.round(0.6 * F);
+  const firstLine = callout.y + (callout.h - callout.lines.length * lineHeight) / 2 + lineHeight / 2;
+  ctx.save();
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.shadowColor = "rgba(0,0,0,.2)";
+  ctx.shadowBlur = F * 0.5;
+  ctx.shadowOffsetY = F * 0.12;
+  ctx.fillStyle = "#fff6c7";
+  ctx.beginPath();
+  ctx.roundRect(callout.x, callout.y, callout.w, callout.h, F * 0.2);
+  ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.lineWidth = Math.max(1, F / 16);
+  ctx.strokeStyle = "#dcc860";
+  ctx.stroke();
+  ctx.fillStyle = RED;
+  ctx.font = numberFont(F);
+  ctx.fillText(`${callout.number}.`, callout.x + padX, firstLine);
+  ctx.fillStyle = "#3d3200";
+  ctx.font = noteFont(F);
+  callout.lines.forEach((line, row) => ctx.fillText(line, callout.x + padX + callout.lead, firstLine + row * lineHeight));
   ctx.restore();
 }

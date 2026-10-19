@@ -62,3 +62,11 @@ it("centres the badge on the top-left corner and clamps it inside the image", ()
   expect(badgeFor(box(100, 80, 50, 50), sizing, BOUNDS)).toEqual({ cx: 100, cy: 80, r });
   expect(badgeFor(box(0, 0, 50, 50), sizing, BOUNDS)).toEqual({ cx: r, cy: r, r });
 });
+
+it("lets a Callout take a click over a Box, and picks the topmost Callout", () => {
+  const boxes = [box(100, 100, 100, 100), box(300, 10, 20, 20), box(100, 100, 100, 100)];
+  const callouts = [{ x: 100, y: 100, w: 80, h: 30 }, null, { x: 150, y: 110, w: 80, h: 30 }];
+  expect(hitTest(boxes, -1, { x: 160, y: 120 }, 6, 6, callouts)).toEqual({ type: "callout", index: 2 });
+  expect(hitTest(boxes, -1, { x: 110, y: 120 }, 6, 6, callouts)).toEqual({ type: "callout", index: 0 });
+  expect(hitTest(boxes, -1, { x: 110, y: 160 }, 6, 6, callouts)).toEqual({ type: "box", index: 2 });
+});

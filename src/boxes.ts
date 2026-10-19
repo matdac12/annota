@@ -22,6 +22,7 @@ export type Corner = "nw" | "ne" | "sw" | "se";
 export type Hit =
   | { type: "handle"; index: number; corner: Corner }
   | { type: "box"; index: number }
+  | { type: "callout"; index: number }
   | { type: "none" };
 
 const clamp = (value: number, low: number, high: number): number => Math.max(low, Math.min(high, value));
@@ -70,8 +71,9 @@ export function cornerPoints(rect: Rect): Array<[Corner, Point]> {
 }
 
 /**
- * What a point lands on: a handle of the selected Box first, then the topmost Box (later Boxes draw over
- * earlier ones). `tolerance` widens a Box's edge and `handleTolerance` a handle, both in image pixels.
+ * What a point lands on: a handle of the selected Box first, then the topmost Callout (they draw over the
+ * Boxes), then the topmost Box (later Boxes draw over earlier ones). `tolerance` widens a Box's edge and
+ * `handleTolerance` a handle, both in image pixels. `callouts` are the drawn Callouts by Box, null for none.
  */
 export function hitTest(
   boxes: readonly Box[],
@@ -79,6 +81,7 @@ export function hitTest(
   point: Point,
   tolerance: number,
   handleTolerance: number,
+  callouts: ReadonlyArray<Rect | null> = [],
 ): Hit {
   const chosen = boxes[selected];
   if (chosen) {
@@ -86,6 +89,18 @@ export function hitTest(
       if (Math.abs(point.x - at.x) <= handleTolerance && Math.abs(point.y - at.y) <= handleTolerance) {
         return { type: "handle", index: selected, corner };
       }
+    }
+  }
+  for (let index = callouts.length - 1; index >= 0; index--) {
+    const callout = callouts[index];
+    if (
+      callout &&
+      point.x >= callout.x &&
+      point.x <= callout.x + callout.w &&
+      point.y >= callout.y &&
+      point.y <= callout.y + callout.h
+    ) {
+      return { type: "callout", index };
     }
   }
   for (let index = boxes.length - 1; index >= 0; index--) {

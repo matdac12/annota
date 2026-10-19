@@ -26,7 +26,7 @@ type Drag =
   | { mode: "move"; index: number; start: Point; original: Rect }
   | { mode: "resize"; index: number; corner: Corner; start: Point; original: Rect };
 
-export type Cursor = "crosshair" | "move" | "nwse-resize" | "nesw-resize";
+export type Cursor = "crosshair" | "move" | "pointer" | "nwse-resize" | "nesw-resize";
 
 /**
  * The pointer's half of the Editor (spec 7): draw, select, move, resize, delete, all in image pixels. It
@@ -47,6 +47,8 @@ export class Interaction {
   constructor(
     private readonly scene: Scene,
     private readonly cssPerImage: () => number,
+    /** The Callouts as drawn now, by Box (null where there is none), so a click on one can find its Box. */
+    private readonly callouts: () => ReadonlyArray<Rect | null> = () => [],
   ) {
     this.strokeWidth = sizingFor(scene.width, scene.height).S;
   }
@@ -58,7 +60,7 @@ export class Interaction {
 
   private hit(point: Point) {
     const tolerance = HIT_CSS_PX / this.cssPerImage();
-    return hitTest(this.scene.boxes, this.selected, point, tolerance, tolerance + this.strokeWidth);
+    return hitTest(this.scene.boxes, this.selected, point, tolerance, tolerance + this.strokeWidth, this.callouts());
   }
 
   /** The cursor over a point while no button is down. */
@@ -66,6 +68,7 @@ export class Interaction {
     const hit = this.hit(point);
     if (hit.type === "none") return "crosshair";
     if (hit.type === "box") return "move";
+    if (hit.type === "callout") return "pointer";
     return hit.corner === "nw" || hit.corner === "se" ? "nwse-resize" : "nesw-resize";
   }
 
@@ -73,6 +76,9 @@ export class Interaction {
     const hit = this.hit(point);
     if (hit.type === "handle") {
       this.drag = { mode: "resize", index: hit.index, corner: hit.corner, start: point, original: { ...this.scene.boxes[hit.index] } };
+    } else if (hit.type === "callout") {
+      // A click on a Callout selects its Box; only the Box itself is dragged.
+      this.selected = hit.index;
     } else if (hit.type === "box") {
       this.selected = hit.index;
       this.drag = { mode: "move", index: hit.index, start: point, original: { ...this.scene.boxes[hit.index] } };
