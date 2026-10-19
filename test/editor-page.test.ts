@@ -17,6 +17,9 @@ class FakeContext {
     if (this.pixels.length !== length) this.pixels = new Uint8ClampedArray(length);
   }
   setTransform(): void {}
+  measureText(text: string): { width: number } {
+    return { width: text.length * 8 };
+  }
   fillRect(): void {}
   putImageData(image: ImageData): void {
     this.fit();

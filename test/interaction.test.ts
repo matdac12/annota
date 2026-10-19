@@ -124,3 +124,14 @@ it("puts a Box back as it was when a resize leaves it under 6 CSS px", () => {
   drag([200, 200], [102, 103]);
   expect(scene.boxes[0]).toMatchObject({ x: 100, y: 100, w: 100, h: 100 });
 });
+
+it("selects a Box when its Callout is clicked, without dragging it, and edits it on double-click", () => {
+  const scene: Scene = { width: 400, height: 300, boxes: [{ x: 50, y: 50, w: 40, h: 40, note: "look" }] };
+  const interaction = new Interaction(scene, () => 1, () => [{ x: 50, y: 95, w: 100, h: 30 }]);
+  interaction.pointerDown({ x: 100, y: 110 });
+  expect(interaction.selected).toBe(0);
+  expect(interaction.dragging).toBe(false);
+  expect(interaction.cursorAt({ x: 100, y: 110 })).toBe("pointer");
+  expect(interaction.editAt({ x: 100, y: 110 })).toBe(0);
+  expect(scene.boxes[0]).toEqual({ x: 50, y: 50, w: 40, h: 40, note: "look" });
+});

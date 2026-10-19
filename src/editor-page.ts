@@ -1,4 +1,5 @@
 import { renderHint } from "./hint";
+import { calloutLayouts, canvasMeasure } from "./callout";
 import { Interaction } from "./interaction";
 import type { EditorIpc } from "./ipc";
 import { actionForKey } from "./keys";
@@ -63,6 +64,8 @@ export function startEditor(win: Window & typeof globalThis, page: EditorPage, i
   let observed = false;
   /** The canvas's backing store: its content box in device pixels. */
   let box: Size = { width: 0, height: 0 };
+  /** Measures Callout text for clicks, apart from the visible canvas. */
+  const measuring = doc.createElement("canvas").getContext("2d") as CanvasRenderingContext2D;
 
   /** How many CSS pixels one image pixel takes on screen now. */
   function cssPerImage(): number {
@@ -84,6 +87,7 @@ export function startEditor(win: Window & typeof globalThis, page: EditorPage, i
     ctx!.imageSmoothingQuality = "high";
     renderSnap(ctx!, snap, {
       forExport: false,
+      editing: interaction.editing,
       selected: interaction.selected,
       preview: interaction.preview,
       imagePerCss: 1 / cssPerImage(),
@@ -308,7 +312,10 @@ export function startEditor(win: Window & typeof globalThis, page: EditorPage, i
         image.getContext("2d")!.putImageData(new ImageData(pixels, width, height), 0, 0);
         closeNote();
         snap = { width, height, image, boxes: [] };
-        interaction = new Interaction(snap, cssPerImage);
+        const current = snap;
+        interaction = new Interaction(current, cssPerImage, () =>
+          calloutLayouts(canvasMeasure(measuring, sizingFor(width, height).F), current, interaction?.editing ?? -1),
+        );
         if (!observed) box = measure();
         changed();
         await nextFrame();
