@@ -12,6 +12,7 @@ use tauri::{AppHandle, State};
 use tokio::sync::oneshot;
 
 use crate::snap;
+use crate::timings;
 
 /// Where a Region waits for the page: either the page is parked on `waiting`, or the Region sits in
 /// `ready` until the page asks.
@@ -101,6 +102,7 @@ pub fn editor_painted(app: AppHandle) {
 /// clipboard, then the Editor closes.
 #[tauri::command]
 pub async fn copy_snap(app: AppHandle, request: Request<'_>) -> Result<(), String> {
+    timings::mark("copy_recv");
     let InvokeBody::Raw(rgba) = request.body() else {
         return Err("copy_snap needs the raw RGBA as its body".into());
     };
@@ -111,6 +113,13 @@ pub async fn copy_snap(app: AppHandle, request: Request<'_>) -> Result<(), Strin
         return Err("copy_snap needs width and height headers".into());
     };
     snap::copy_image(&app, width, height, rgba)
+}
+
+/// A timing mark from the page (ANNOTA-20); only the named ones are taken, and only in a timings build.
+#[cfg(feature = "timings")]
+#[tauri::command]
+pub fn timing_mark(name: String) {
+    timings::page_mark(&name);
 }
 
 /// Esc: close the Editor with nothing copied.

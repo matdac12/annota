@@ -14,6 +14,7 @@ use crate::capture;
 use crate::commands::Handoff;
 use crate::editor;
 use crate::overlay::{self, Outcome};
+use crate::timings;
 
 /// What the Resident tells the Editor's page when `--snap` arrives while it is open: do what Ctrl+C does.
 pub const COPY_REQUESTED: &str = "copy-requested";
@@ -117,6 +118,7 @@ fn selection_ended(app: &AppHandle, outcome: Outcome) {
     match outcome {
         Outcome::Cancelled => set_state(app, State::Idle),
         Outcome::Selected(region) => {
+            timings::mark("region");
             eprintln!(
                 "snap: Region {}x{} at ({}, {}) on the monitor at ({}, {})",
                 region.width(),
@@ -141,10 +143,12 @@ fn selection_ended(app: &AppHandle, outcome: Outcome) {
 /// The page called `editor_painted` (or the deadline passed): show the Editor and move to `Editing`. Only
 /// the first of the two does anything.
 pub fn editor_painted(app: &AppHandle) {
+    timings::mark("painted");
     if !app.state::<Handoff>().take_paint() {
         return;
     }
     editor::reveal(app);
+    timings::mark("shown");
     set_state(app, State::Editing);
 }
 
@@ -182,6 +186,7 @@ pub fn copy_image(app: &AppHandle, width: usize, height: usize, rgba: &[u8]) -> 
     arboard::Clipboard::new()
         .and_then(|mut clipboard| clipboard.set_image(arboard::ImageData { width, height, bytes: Cow::Borrowed(rgba) }))
         .map_err(|e| format!("clipboard: {e}"))?;
+    timings::mark("clipboard_set");
     finish(app);
     Ok(())
 }
@@ -198,6 +203,7 @@ fn finish(app: &AppHandle) {
     let on_main = app.clone();
     let queued = app.run_on_main_thread(move || {
         editor::hide(&on_main);
+        timings::mark("closed");
         on_main.state::<Handoff>().forget_region();
         set_state(&on_main, State::Idle);
     });
@@ -209,6 +215,7 @@ fn finish(app: &AppHandle) {
 /// `--snap` (or the tray) while the Editor is open: the same as Ctrl+C. The canvas lives in the page, so
 /// ask it to copy.
 pub fn copy_and_close(app: &AppHandle) {
+    timings::mark("copy_requested");
     let _ = app.emit_to(editor::LABEL, COPY_REQUESTED, ());
 }
 

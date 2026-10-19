@@ -38,6 +38,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::capture::{Dib, MonitorCapture, Region};
 use crate::geometry::{self, Rect};
+use crate::timings;
 
 const CLASS: PCWSTR = w!("AnnotaOverlay");
 const HOTKEY_ID: i32 = 1;
@@ -308,6 +309,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             return LRESULT(0);
         }
         WM_LBUTTONUP => {
+            timings::mark("mouse_up");
             end_drag(hwnd);
             return LRESULT(0);
         }

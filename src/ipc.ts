@@ -13,6 +13,8 @@ export interface EditorIpc {
   discard(): Promise<void>;
   /** `--snap` arrived while the Editor is open. */
   onCopyRequested(handler: () => void): void;
+  /** A timing mark for the joint test session (ANNOTA-20): only in a build made with `VITE_TIMINGS=1`. */
+  mark?(name: string): void;
 }
 
 export const tauriIpc: EditorIpc = {
@@ -26,4 +28,10 @@ export const tauriIpc: EditorIpc = {
   onCopyRequested: (handler) => {
     void listen("copy-requested", handler);
   },
+  // Dead code in a normal build: Vite folds the constant away and Rust has no `timing_mark` command.
+  mark: import.meta.env.VITE_TIMINGS
+    ? (name) => {
+        void invoke("timing_mark", { name });
+      }
+    : undefined,
 };

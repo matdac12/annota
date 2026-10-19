@@ -6,6 +6,10 @@ edition = "2021"
 license = "MIT"
 publish = false
 
+[features]
+# ANNOTA-20: QPC timing marks and the tray items that dump them. Never on in a normal build.
+timings = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -29,6 +33,7 @@ windows = { version = "0.62", features = [
     "Win32_Security",
     "Win32_System_DataExchange",
     "Win32_System_LibraryLoader",
+    "Win32_System_Performance",
     "Win32_System_Threading",
     "Win32_UI_HiDpi",
     "Win32_UI_Input_KeyboardAndMouse",

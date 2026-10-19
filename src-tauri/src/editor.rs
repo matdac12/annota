@@ -13,6 +13,7 @@ use crate::capture::Region;
 use crate::commands::Handoff;
 use crate::geometry::{self, Chrome, Rect};
 use crate::snap;
+use crate::timings;
 
 /// The Editor's window label; the capability and the Resident's events address it by this.
 pub const LABEL: &str = "editor";
@@ -88,6 +89,7 @@ pub fn open(app: &AppHandle, region: Region) -> Result<u64, String> {
     let handoff = app.state::<Handoff>();
     let token = handoff.expect_paint();
     handoff.deliver(geometry::with_dimensions(region.rgba, width, height));
+    timings::mark("deliver");
     Ok(token)
 }
 

@@ -232,7 +232,9 @@ export function startEditor(win: Window & typeof globalThis, page: EditorPage, i
     closeNote();
     closing = true;
     try {
-      await ipc.copy(exportSnap(snap), snap.width, snap.height);
+      const rgba = exportSnap(snap);
+      ipc.mark?.("page_exported");
+      await ipc.copy(rgba, snap.width, snap.height);
       forget();
     } catch (error) {
       console.error("copy failed", error);
@@ -276,6 +278,7 @@ export function startEditor(win: Window & typeof globalThis, page: EditorPage, i
     if (event.repeat || closing) return;
     switch (action) {
       case "copy":
+        ipc.mark?.("copy_key");
         void copy();
         break;
       case "discard":
@@ -306,10 +309,12 @@ export function startEditor(win: Window & typeof globalThis, page: EditorPage, i
     for (;;) {
       try {
         const { width, height, pixels } = parseSnapBytes(await ipc.nextSnap());
+        ipc.mark?.("page_bytes");
         const image = doc.createElement("canvas");
         image.width = width;
         image.height = height;
         image.getContext("2d")!.putImageData(new ImageData(pixels, width, height), 0, 0);
+        ipc.mark?.("page_drawn");
         closeNote();
         snap = { width, height, image, boxes: [] };
         const current = snap;
@@ -319,6 +324,7 @@ export function startEditor(win: Window & typeof globalThis, page: EditorPage, i
         if (!observed) box = measure();
         changed();
         await nextFrame();
+        ipc.mark?.("page_frame");
         // Rust sized the window before it sent the pixels; if the observer hasn't spoken yet, look again.
         if (!observed) resized(measure());
         await ipc.painted();
