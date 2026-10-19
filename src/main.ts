@@ -1,3 +1,4 @@
-import { mountEditorPage } from "./editor-page";
+import { mountEditorPage, startEditor } from "./editor-page";
+import { tauriIpc } from "./ipc";
 
-mountEditorPage(document);
+startEditor(window, mountEditorPage(document), tauriIpc);

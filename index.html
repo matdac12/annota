@@ -5,22 +5,53 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Annota</title>
     <style>
+      :root {
+        /* Rust places the window around this (`HINT_CSS_HEIGHT` in editor.rs). */
+        --hint-height: 28px;
+      }
       html,
       body {
         margin: 0;
         height: 100%;
-        background: #1c1c1e;
+        background: #2a2a2f;
         overflow: hidden;
       }
+      body {
+        display: flex;
+        flex-direction: column;
+        font: 12px "Segoe UI", system-ui, sans-serif;
+      }
+      /* The canvas fills the stage and never sizes it: the page redraws from the stage's device pixels. */
+      #stage {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+      }
       canvas {
+        position: absolute;
+        inset: 0;
         display: block;
         width: 100%;
         height: 100%;
       }
+      #hint {
+        flex: none;
+        height: var(--hint-height);
+        line-height: var(--hint-height);
+        text-align: center;
+        color: #a8a8b3;
+        letter-spacing: 0.01em;
+        user-select: none;
+      }
+      #hint b {
+        color: #dcdce2;
+        font-weight: 600;
+      }
     </style>
   </head>
   <body>
-    <canvas id="snap"></canvas>
+    <div id="stage"><canvas id="snap"></canvas></div>
+    <div id="hint"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

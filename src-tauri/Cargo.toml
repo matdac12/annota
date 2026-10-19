@@ -14,6 +14,8 @@ tauri = { version = "2", features = ["tray-icon"] }
 # Pinned exactly: the `--snap` fast path in `single_instance.rs` reuses its private window names
 # and payload, so an upgrade must be a deliberate change (the test there pins them).
 tauri-plugin-single-instance = "=2.5.4"
+# `next_snap` parks on a oneshot until the Overlay hands over a Region. Already in the tree via tauri.
+tokio = { version = "1", default-features = false, features = ["sync"] }
 
 [target.'cfg(windows)'.dependencies]
 # Already in the tree via wry; used to lower the hidden Editor's memory target.
@@ -32,8 +34,7 @@ windows = { version = "0.62", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
 ] }
-# The tracer-bullet hand-off until the Editor lands (ANNOTA-16): `set_image` writes the "PNG" and
-# CF_DIBV5 clipboard formats (spec 9).
+# The clipboard: `set_image` writes the "PNG" and CF_DIBV5 formats (spec 9).
 arboard = "3.6"
 # Autostart's registry reads and writes (already in the tree via tauri).
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Registry"] }
