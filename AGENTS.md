@@ -14,5 +14,5 @@ Windows tray app: Caps+S → drag a Region → numbered Boxes with Notes → Ctr
 - **Grab first, show second.** On `--snap`, every monitor is captured before any Annota window appears.
 - **Physical pixels end to end.** The process is per-monitor-v2 aware; Overlay and Editor geometry are physical pixels; Box and Callout geometry is image pixels.
 - **Timed measurements** only with Mattia, in the turn assigned on `%LOCALAPPDATA%\parla-machine.lock`. Estimates are fine anywhere; say they are estimates.
-- **Copy Traccia desktop** (`C:\Users\MattiaDaCampo\Documents\TRACCIA\traccia\apps\desktop\src-tauri`) where the spec names it: `launch.rs`, `resident.rs`, `autostart.rs`, `tray.rs`, `nsis-hooks.nsh`.
+- **Copy Traccia desktop** (`C:\Users\MattiaDaCampo\Documents\mstack\traccia\apps\desktop\src-tauri`) where the spec names it: `launch.rs`, `resident.rs`, `autostart.rs`, `tray.rs`, `nsis-hooks.nsh`.
 - `tauri-plugin-single-instance` stays pinned at `=2.5.4`: the `--snap` fast path depends on its private window names.
