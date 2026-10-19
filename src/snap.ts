@@ -1,10 +1,14 @@
-/** What the Editor holds for the current Snap: the Region's pixels, which Boxes and Callouts will join. */
+import type { Box } from "./boxes";
+
+/** What the Editor holds for the current Snap: the Region's pixels and the Boxes drawn on them. */
 export interface Snap {
   /** Image pixels, the unit all Box and Callout geometry is kept in. */
   width: number;
   height: number;
   /** The Region as Rust cropped it, drawn from here every time so the original is never touched. */
   image: CanvasImageSource;
+  /** The Boxes in number order: the first is 1. */
+  boxes: Box[];
 }
 
 /** Bytes after the pixels: width and height as little-endian u32. */

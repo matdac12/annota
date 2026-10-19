@@ -42,3 +42,29 @@ export function deviceSize(entry: ObservedBox, devicePixelRatio: number): Size {
     height: Math.round(entry.contentRect.height * devicePixelRatio),
   };
 }
+
+/** The Note field's width in CSS pixels: the Callout's width cap as it shows on screen, within 280 to 440. */
+export function noteCardWidth(capImagePx: number, cssPerImage: number): number {
+  return Math.min(440, Math.max(280, capImagePx * cssPerImage));
+}
+
+const CARD_GAP = 10;
+const CARD_EDGE = 8;
+
+/**
+ * Where the Note field's card goes, in CSS pixels in the stage: under the Box, or above it (clearing its
+ * badge) when it wouldn't fit below, and clamped inside the window either way (spec 7.1).
+ */
+export function placeNoteCard(
+  box: { x: number; y: number; w: number; h: number },
+  badgeRadius: number,
+  card: Size,
+  stage: Size,
+): { left: number; top: number } {
+  let top = box.y + box.h + CARD_GAP;
+  if (top + card.height > stage.height - CARD_EDGE) top = box.y - badgeRadius - CARD_GAP - card.height;
+  return {
+    left: Math.max(CARD_EDGE, Math.min(box.x, stage.width - card.width - CARD_EDGE)),
+    top: Math.max(CARD_EDGE, Math.min(top, stage.height - card.height - CARD_EDGE)),
+  };
+}
