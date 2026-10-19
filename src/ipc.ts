@@ -9,8 +9,8 @@ export interface EditorIpc {
   /** A frame with the Region on it has been presented: Rust may show the window. */
   painted(): Promise<void>;
   /**
-   * The exported RGBA goes to the clipboard, then Rust closes the Editor. `original` is the Region as Rust sent
-   * it, for the delta candidate (ANNOTA-23).
+   * The export goes to the clipboard, then Rust closes the Editor. Only what differs from `original`, the
+   * Region as Rust sent it, crosses over: the Boxes and Callouts, not the 33 MB of a 4K Region.
    */
   copy(rgba: Uint8ClampedArray, width: number, height: number, original?: Uint8ClampedArray): Promise<void>;
   /** Close the Editor with nothing copied. */
@@ -20,34 +20,6 @@ export interface EditorIpc {
   /** A timing mark for the joint test session (ANNOTA-20): only in a build made with `VITE_TIMINGS=1`. */
   mark?(name: string): void;
 }
-
-/** How Rust wants the pixels on Ctrl+C (ANNOTA-23); it says so with `transfer-mode` when the Editor shows. */
-type Transfer = "raw" | "delta" | "shared";
-const TRANSFERS: Transfer[] = ["raw", "delta", "shared"];
-/** The serial of the Snap now open: a shared buffer is this Snap's only if it carries the same one. */
-let serial = 0;
-let transfer: Transfer = "raw";
-void listen<[number, number]>("transfer-mode", (event) => {
-  const [mode, snapSerial] = event.payload;
-  transfer = TRANSFERS[mode] ?? "raw";
-  serial = snapSerial;
-});
-
-/** The WebView2 shared buffer Rust posted last, with the serial it was tagged with. Either may arrive first. */
-let shared: { buffer: ArrayBuffer; serial: number } | null = null;
-interface SharedBufferEvent {
-  additionalData?: { serial?: number };
-  getBuffer(): ArrayBuffer;
-}
-interface WebViewHost {
-  addEventListener(type: "sharedbufferreceived", handler: (event: SharedBufferEvent) => void): void;
-}
-(window as unknown as { chrome?: { webview?: WebViewHost } }).chrome?.webview?.addEventListener(
-  "sharedbufferreceived",
-  (event) => {
-    shared = { buffer: event.getBuffer(), serial: event.additionalData?.serial ?? -1 };
-  },
-);
 
 const mark = import.meta.env.VITE_TIMINGS
   ? (name: string) => {
@@ -62,23 +34,18 @@ function copyRaw(rgba: Uint8ClampedArray, width: number, height: number): Promis
 }
 
 /**
- * Sends the export the way Rust asked for. Anything not ready, or that fails, falls back to the raw body (the
- * delta and shared paths spend what Rust kept for the Snap, so the raw one is the only retry).
+ * Sends only the tiles that differ from `original`, which Rust kept (spec §9). If that fails Rust has spent
+ * its copy, so the retry is the whole export as the raw body.
  */
 async function copyRgba(rgba: Uint8ClampedArray, width: number, height: number, original?: Uint8ClampedArray): Promise<void> {
-  try {
-    if (transfer === "delta" && original) {
+  if (original) {
+    try {
       const payload = encodeDelta(original, rgba, width, height);
       mark?.("page_packed");
       return await invoke("copy_delta", payload);
+    } catch (error) {
+      console.error("copy by changed tiles failed, sending the whole export", error);
     }
-    if (transfer === "shared" && shared?.serial === serial && shared.buffer.byteLength === rgba.byteLength) {
-      new Uint8Array(shared.buffer).set(rgba);
-      mark?.("page_packed");
-      return await invoke("copy_shared");
-    }
-  } catch (error) {
-    console.error(`copy by ${transfer} failed, sending the raw pixels`, error);
   }
   return copyRaw(rgba, width, height);
 }

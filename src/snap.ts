@@ -9,7 +9,7 @@ export interface Snap {
   image: CanvasImageSource;
   /** The Boxes in number order: the first is 1. */
   boxes: Box[];
-  /** The Region's RGBA as Rust sent it, for the delta candidate of the copy (ANNOTA-23). */
+  /** The Region's RGBA as Rust sent it, to compare the export with when copying (`delta.ts`). */
   pixels?: Uint8ClampedArray;
 }
 

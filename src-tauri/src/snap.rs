@@ -4,18 +4,18 @@
 //! [`request_snap`]. It runs on the main thread, inside `WM_COPYDATA` for `--snap`, so it only decides
 //! and starts the work; it never waits on the WebView.
 
+use std::borrow::Cow;
 use std::sync::Mutex;
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::capture;
-use crate::clipboard;
 use crate::commands::Handoff;
 use crate::editor;
 use crate::overlay::{self, Outcome};
+use crate::delta::Kept;
 use crate::timings;
-use crate::transfer::Staged;
 
 /// What the Resident tells the Editor's page when `--snap` arrives while it is open: do what Ctrl+C does.
 pub const COPY_REQUESTED: &str = "copy-requested";
@@ -184,8 +184,9 @@ pub fn copy_image(app: &AppHandle, width: usize, height: usize, rgba: &[u8]) -> 
     if width == 0 || height == 0 || rgba.len() != width * height * 4 {
         return Err(format!("{} bytes is not a {width}x{height} RGBA image", rgba.len()));
     }
-    timings::mark_copy_mode();
-    clipboard::set_image(width, height, rgba, timings::clip_writer()).map_err(|e| format!("clipboard: {e}"))?;
+    arboard::Clipboard::new()
+        .and_then(|mut clipboard| clipboard.set_image(arboard::ImageData { width, height, bytes: Cow::Borrowed(rgba) }))
+        .map_err(|e| format!("clipboard: {e}"))?;
     timings::mark("clipboard_set");
     finish(app);
     Ok(())
@@ -205,7 +206,7 @@ fn finish(app: &AppHandle) {
         editor::hide(&on_main);
         timings::mark("closed");
         on_main.state::<Handoff>().forget_region();
-        on_main.state::<Staged>().release();
+        on_main.state::<Kept>().release();
         set_state(&on_main, State::Idle);
     });
     if queued.is_err() {

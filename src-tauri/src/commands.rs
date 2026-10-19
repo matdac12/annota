@@ -13,7 +13,7 @@ use tokio::sync::oneshot;
 
 use crate::snap;
 use crate::timings;
-use crate::transfer::Staged;
+use crate::delta::Kept;
 
 /// Where a Region waits for the page: either the page is parked on `waiting`, or the Region sits in
 /// `ready` until the page asks.
@@ -99,8 +99,8 @@ pub fn editor_painted(app: AppHandle) {
     snap::editor_painted(&app);
 }
 
-/// Ctrl+C: the canvas's pixels as raw RGBA in the body, `width` and `height` in the headers. Sets the
-/// clipboard, then the Editor closes.
+/// Ctrl+C, the way back when `copy_delta` can't be used: the canvas's pixels as raw RGBA in the body, `width`
+/// and `height` in the headers. Sets the clipboard, then the Editor closes.
 #[tauri::command]
 pub async fn copy_snap(app: AppHandle, request: Request<'_>) -> Result<(), String> {
     timings::mark("copy_recv");
@@ -116,25 +116,17 @@ pub async fn copy_snap(app: AppHandle, request: Request<'_>) -> Result<(), Strin
     snap::copy_image(&app, width, height, rgba)
 }
 
-/// Ctrl+C, the delta candidate (ANNOTA-23): only the rectangles the Boxes and Callouts changed, which Rust
-/// patches into the Region it kept. See `transfer::apply_rects` for the format.
+/// Ctrl+C (spec §9): only the rectangles the Boxes and Callouts changed, which Rust patches into the Region
+/// it kept (`delta::apply_rects` has the format). Sets the clipboard, then the Editor closes.
 #[tauri::command]
-pub async fn copy_delta(app: AppHandle, staged: State<'_, Staged>, request: Request<'_>) -> Result<(), String> {
+pub async fn copy_delta(app: AppHandle, kept: State<'_, Kept>, request: Request<'_>) -> Result<(), String> {
     timings::mark("copy_recv");
     let InvokeBody::Raw(payload) = request.body() else {
         return Err("copy_delta needs the changed rectangles as its body".into());
     };
-    let (rgba, width, height) = staged.patched(payload)?;
+    let (rgba, width, height) = kept.patched(payload)?;
     timings::mark("delta_applied");
     snap::copy_image(&app, width, height, &rgba)
-}
-
-/// Ctrl+C, the shared-buffer candidate (ANNOTA-23): the page has already written its pixels into the buffer
-/// posted after the Editor showed.
-#[tauri::command]
-pub async fn copy_shared(app: AppHandle, staged: State<'_, Staged>) -> Result<(), String> {
-    timings::mark("copy_recv");
-    staged.with_shared(|rgba, width, height| snap::copy_image(&app, width, height, rgba))?
 }
 
 /// A timing mark from the page (ANNOTA-20); only the named ones are taken, and only in a timings build.
