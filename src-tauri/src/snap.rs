@@ -201,12 +201,12 @@ pub fn discard(app: &AppHandle) {
 
 /// Hides the Editor and goes back to `Idle`, on the main thread where the window lives.
 fn finish(app: &AppHandle) {
+    app.state::<Kept>().release();
     let on_main = app.clone();
     let queued = app.run_on_main_thread(move || {
         editor::hide(&on_main);
         timings::mark("closed");
         on_main.state::<Handoff>().forget_region();
-        on_main.state::<Kept>().release();
         set_state(&on_main, State::Idle);
     });
     if queued.is_err() {

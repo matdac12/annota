@@ -11,7 +11,7 @@ interface Rect {
 /**
  * What differs between the Region as Rust sent it (`before`) and the export (`after`), as the payload of
  * `copy_delta` (ANNOTA-23): a little-endian u32 count, then `x y w h` as u32s for each rectangle, then each
- * rectangle's RGBA rows. Rust patches the Region it kept (`transfer::apply_rects`).
+ * rectangle's RGBA rows. Rust patches the Region it kept (`delta::apply_rects`).
  *
  * Both are top-down RGBA, `width`×`height`. The rectangles are whole `TILE` squares that hold at least one
  * changed byte (the last ones clipped to the image), joined along a row and then down a column when they

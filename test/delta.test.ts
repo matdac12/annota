@@ -8,7 +8,7 @@ function ramp(width: number, height: number): Uint8ClampedArray {
   return rgba;
 }
 
-/** Independent reader of the wire format (`transfer::apply_rects` in Rust is the real one). */
+/** Independent reader of the wire format (`delta::apply_rects` in Rust is the real one). */
 function apply(base: Uint8ClampedArray, width: number, payload: Uint8Array): Uint8ClampedArray {
   const out = base.slice();
   const words = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
@@ -31,7 +31,7 @@ it("sends nothing for an image that did not change", () => {
 });
 
 it("writes the format Rust reads: a count, a table, then the pixels of each rectangle", () => {
-  // The same bytes `transfer::tests::the_payload_the_page_test_pins_applies` patches in: a 2×1 image is one
+  // The same bytes `delta::tests::the_payload_the_page_test_pins_applies` patches in: a 2×1 image is one
   // tile, so one changed pixel sends the whole 2×1 rectangle at (0, 0).
   const before = new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 255]);
   const after = new Uint8ClampedArray([1, 2, 3, 255, 40, 50, 60, 255]);
