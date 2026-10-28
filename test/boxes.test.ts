@@ -52,6 +52,16 @@ it("hits the topmost Box where Boxes overlap, and the tolerance around an edge",
   expect(hitTest(boxes, -1, { x: 90, y: 150 }, 6, 6)).toEqual({ type: "none" });
 });
 
+it("lets the whole badge hit its Box, and no more than the badge", () => {
+  const sizing = sizingFor(400, 300); // badge 23 px across: 11.5 px from the corner
+  const boxes = [box(100, 100, 50, 50)];
+  const tolerance = 6;
+  const handleTolerance = tolerance + sizing.S;
+  // 11 px up and left of the corner: on the badge, and beyond the Box's tolerance.
+  expect(hitTest(boxes, -1, { x: 89, y: 100 }, tolerance, handleTolerance)).toEqual({ type: "box", index: 0 });
+  expect(hitTest(boxes, -1, { x: 87, y: 100 }, tolerance, handleTolerance)).toEqual({ type: "none" });
+});
+
 it("hits nothing on empty canvas", () => {
   expect(hitTest([], -1, { x: 5, y: 5 }, 6, 6)).toEqual({ type: "none" });
 });
@@ -63,10 +73,32 @@ it("centres the badge on the top-left corner and clamps it inside the image", ()
   expect(badgeFor(box(0, 0, 50, 50), sizing, BOUNDS)).toEqual({ cx: r, cy: r, r });
 });
 
-it("lets a Callout take a click over a Box, and picks the topmost Callout", () => {
-  const boxes = [box(100, 100, 100, 100), box(300, 10, 20, 20), box(100, 100, 100, 100)];
-  const callouts = [{ x: 100, y: 100, w: 80, h: 30 }, null, { x: 150, y: 110, w: 80, h: 30 }];
-  expect(hitTest(boxes, -1, { x: 160, y: 120 }, 6, 6, callouts)).toEqual({ type: "callout", index: 2 });
-  expect(hitTest(boxes, -1, { x: 110, y: 120 }, 6, 6, callouts)).toEqual({ type: "callout", index: 0 });
-  expect(hitTest(boxes, -1, { x: 110, y: 160 }, 6, 6, callouts)).toEqual({ type: "box", index: 2 });
+it("lets a Callout over empty canvas take the click, and picks the topmost Callout", () => {
+  const boxes = [box(10, 10, 20, 20), box(300, 10, 20, 20)];
+  const callouts = [
+    { x: 400, y: 400, w: 80, h: 30 },
+    { x: 420, y: 410, w: 80, h: 30 },
+  ];
+  expect(hitTest(boxes, -1, { x: 430, y: 415 }, 6, 6, callouts)).toEqual({ type: "callout", index: 1 });
+  expect(hitTest(boxes, -1, { x: 405, y: 405 }, 6, 6, callouts)).toEqual({ type: "callout", index: 0 });
+});
+
+it("gives a Box's edge the click where a Callout overlaps it", () => {
+  const boxes = [box(300, 20, 50, 50), box(105, 160, 200, 100)];
+  const callouts = [null, { x: 95, y: 150, w: 100, h: 60 }];
+  expect(hitTest(boxes, -1, { x: 160, y: 160 }, 6, 6, callouts)).toEqual({ type: "box", index: 1 });
+});
+
+it("gives a Box's badge the click where a Callout overlaps it", () => {
+  const boxes = [box(300, 20, 50, 50), box(105, 160, 200, 100)];
+  const callouts = [null, { x: 95, y: 150, w: 100, h: 60 }];
+  const tolerance = 6;
+  const handleTolerance = tolerance + sizingFor(400, 300).S;
+  expect(hitTest(boxes, -1, { x: 100, y: 152 }, tolerance, handleTolerance, callouts)).toEqual({ type: "box", index: 1 });
+});
+
+it("lets a Callout over a Box's interior take the click, so a Box inside another keeps its Note", () => {
+  const boxes = [box(50, 50, 400, 300), box(100, 100, 40, 40)];
+  const callouts = [null, { x: 100, y: 150, w: 80, h: 30 }];
+  expect(hitTest(boxes, -1, { x: 110, y: 160 }, 6, 6, callouts)).toEqual({ type: "callout", index: 1 });
 });
