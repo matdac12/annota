@@ -19,7 +19,7 @@ use crate::delta::Kept;
 /// The Editor's window label; the capability and the Resident's events address it by this.
 pub const LABEL: &str = "editor";
 
-/// How the Editor window is built. Pinned by a test: later slices address it by `label`.
+/// The Editor window's settings. The builder reads them through [`apply`], which a test can watch.
 struct Spec {
     label: &'static str,
     title: &'static str,
@@ -35,6 +35,39 @@ const SPEC: Spec = Spec {
     resizable: false,
     always_on_top: false,
 };
+
+/// A window builder the [`Spec`] is applied to: the real builder, or the tests' recorder. A setting
+/// dropped from [`apply`] therefore fails a test without a window being built.
+trait Window {
+    fn with_title(self, title: &'static str) -> Self;
+    fn with_resizable(self, resizable: bool) -> Self;
+    fn with_always_on_top(self, always_on_top: bool) -> Self;
+    fn with_visible(self, visible: bool) -> Self;
+}
+
+impl<R: tauri::Runtime, M: Manager<R>> Window for WebviewWindowBuilder<'_, R, M> {
+    fn with_title(self, title: &'static str) -> Self {
+        WebviewWindowBuilder::title(self, title)
+    }
+    fn with_resizable(self, resizable: bool) -> Self {
+        WebviewWindowBuilder::resizable(self, resizable)
+    }
+    fn with_always_on_top(self, always_on_top: bool) -> Self {
+        WebviewWindowBuilder::always_on_top(self, always_on_top)
+    }
+    fn with_visible(self, visible: bool) -> Self {
+        WebviewWindowBuilder::visible(self, visible)
+    }
+}
+
+/// Puts `spec` on `builder`: [`build`] passes the real builder, the test a recorder.
+fn apply<W: Window>(builder: W, spec: &Spec) -> W {
+    builder
+        .with_title(spec.title)
+        .with_resizable(spec.resizable)
+        .with_always_on_top(spec.always_on_top)
+        .with_visible(spec.visible)
+}
 
 /// The page's own background (`index.html`), so the window never flashes white.
 const BACKGROUND: (u8, u8, u8) = (0x2a, 0x2a, 0x2f);
@@ -58,14 +91,10 @@ fn window(app: &AppHandle) -> Option<WebviewWindow> {
 /// the window: the Editor is pre-warmed once and lives as long as the Resident.
 pub fn build(app: &tauri::App) -> tauri::Result<()> {
     let (r, g, b) = BACKGROUND;
-    let window = WebviewWindowBuilder::new(app, SPEC.label, WebviewUrl::App("index.html".into()))
-        .title(SPEC.title)
+    let builder = WebviewWindowBuilder::new(app, SPEC.label, WebviewUrl::App("index.html".into()))
         .inner_size(WIDTH, HEIGHT)
-        .background_color(Color(r, g, b, 255))
-        .resizable(SPEC.resizable)
-        .always_on_top(SPEC.always_on_top)
-        .visible(SPEC.visible)
-        .build()?;
+        .background_color(Color(r, g, b, 255));
+    let window = apply(builder, &SPEC).build()?;
     let handle = app.handle().clone();
     window.on_window_event(move |event| {
         if let WindowEvent::CloseRequested { api, .. } = event {
@@ -228,6 +257,40 @@ fn monitor_work_area_and_dpi(_monitor: Rect) -> Option<(Rect, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Stands in for the window builder and records what [`apply`] set, so a setting dropped on the way to
+    /// the builder fails a test without a window.
+    #[derive(Default)]
+    struct Recorded {
+        title: Option<&'static str>,
+        visible: Option<bool>,
+        resizable: Option<bool>,
+        always_on_top: Option<bool>,
+    }
+
+    impl Window for Recorded {
+        fn with_title(self, title: &'static str) -> Self {
+            Recorded { title: Some(title), ..self }
+        }
+        fn with_resizable(self, resizable: bool) -> Self {
+            Recorded { resizable: Some(resizable), ..self }
+        }
+        fn with_always_on_top(self, always_on_top: bool) -> Self {
+            Recorded { always_on_top: Some(always_on_top), ..self }
+        }
+        fn with_visible(self, visible: bool) -> Self {
+            Recorded { visible: Some(visible), ..self }
+        }
+    }
+
+    #[test]
+    fn the_window_builder_is_given_the_hidden_settings_the_constants_pin() {
+        let window = apply(Recorded::default(), &SPEC);
+        assert_eq!(window.title, Some("Annota"));
+        assert_eq!(window.visible, Some(false), "a dropped `.visible(false)` would build a visible Editor");
+        assert_eq!(window.resizable, Some(false));
+        assert_eq!(window.always_on_top, Some(false));
+    }
 
     #[test]
     fn the_editor_starts_hidden_as_a_plain_titled_window() {

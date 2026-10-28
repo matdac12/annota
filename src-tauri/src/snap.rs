@@ -215,10 +215,12 @@ fn finish(app: &AppHandle) {
 }
 
 /// `--snap` (or the tray) while the Editor is open: the same as Ctrl+C. The canvas lives in the page, so
-/// ask it to copy.
+/// ask it to copy; a request the page can't hear is logged rather than lost.
 pub fn copy_and_close(app: &AppHandle) {
     timings::mark("copy_requested");
-    let _ = app.emit_to(editor::LABEL, COPY_REQUESTED, ());
+    if let Err(e) = app.emit_to(editor::LABEL, COPY_REQUESTED, ()) {
+        eprintln!("snap: could not ask the Editor to copy: {e}");
+    }
 }
 
 #[cfg(test)]
