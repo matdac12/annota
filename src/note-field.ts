@@ -6,6 +6,8 @@ export interface NoteField {
   hasSelection(): boolean;
   size(): { width: number; height: number };
   place(left: number, top: number): void;
+  /** The card's box changed (its width follows the image on screen): fit the textarea to its text again. */
+  resize(): void;
   close(): void;
 }
 
@@ -68,6 +70,7 @@ export function openNoteField(doc: Document, host: HTMLElement, options: NoteFie
       card.style.left = `${left}px`;
       card.style.top = `${top}px`;
     },
+    resize: grow,
     close: () => card.remove(),
   };
 }
