@@ -431,6 +431,23 @@ it("keeps the Note card's width in step with a move to a monitor at another scal
   expect(editor.card()!.style.width, "the same pixels at twice the scale are half as wide on screen").toBe("280px");
 });
 
+it("fits the Note field's text into the card again when the card narrows", async () => {
+  const editor = await editorWithRegion();
+  editor.dragBox([250, 200], [350, 260]);
+  // jsdom lays nothing out: the textarea reports the height its text needs at the card's width, as a browser
+  // would (16 px a character, 20 px a line).
+  vi.spyOn(HTMLTextAreaElement.prototype, "scrollHeight", "get").mockImplementation(function (this: HTMLTextAreaElement) {
+    const width = parseInt((this.closest(".note-card") as HTMLElement).style.width, 10);
+    return Math.ceil((this.value.length * 16) / width) * 20;
+  });
+  // 71 characters: 3 lines in a 384 px card, 5 in the 280 px one it becomes at 50%.
+  editor.typeNote("one two three four five six seven eight nine ten eleven twelve thirteen");
+  expect(editor.field()!.style.height, "at 384 px").toBe("60px");
+
+  editor.resize(200, 150);
+  expect(editor.field()!.style.height, "the narrower card wraps the text onto more lines").toBe("100px");
+});
+
 it("does nothing on Ctrl+C in the middle of a drag", async () => {
   const editor = await editorWithRegion();
   editor.mouse("pointerdown", 250, 200);

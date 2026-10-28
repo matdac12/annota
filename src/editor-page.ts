@@ -110,7 +110,11 @@ export function startEditor(win: Window & typeof globalThis, page: EditorPage, i
     const dpr = win.devicePixelRatio;
     const stage = canvas.getBoundingClientRect();
     // The card follows the image on screen: a resize or a move to another scale resizes it too.
-    note.card.style.width = `${noteCardWidth(sizing.cap, k)}px`;
+    const width = `${noteCardWidth(sizing.cap, k)}px`;
+    if (note.card.style.width !== width) {
+      note.card.style.width = width;
+      note.resize();
+    }
     const at = placeNoteCard(
       { x: placed.x / dpr + editing.x * k, y: placed.y / dpr + editing.y * k, w: editing.w * k, h: editing.h * k },
       (sizing.D / 2) * k,
