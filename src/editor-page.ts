@@ -105,12 +105,15 @@ export function startEditor(win: Window & typeof globalThis, page: EditorPage, i
   function positionNote(): void {
     if (!snap || !note || !interaction || interaction.editing < 0) return;
     const editing = snap.boxes[interaction.editing];
+    const sizing = sizingFor(snap.width, snap.height);
     const k = cssPerImage();
     const dpr = win.devicePixelRatio;
     const stage = canvas.getBoundingClientRect();
+    // The card follows the image on screen: a resize or a move to another scale resizes it too.
+    note.card.style.width = `${noteCardWidth(sizing.cap, k)}px`;
     const at = placeNoteCard(
       { x: placed.x / dpr + editing.x * k, y: placed.y / dpr + editing.y * k, w: editing.w * k, h: editing.h * k },
-      (sizingFor(snap.width, snap.height).D / 2) * k,
+      (sizing.D / 2) * k,
       note.size(),
       { width: stage.width, height: stage.height },
     );
@@ -191,7 +194,7 @@ export function startEditor(win: Window & typeof globalThis, page: EditorPage, i
     changed();
   });
   canvas.addEventListener("pointermove", (event) => {
-    if (!snap || !interaction) return;
+    if (!snap || !interaction || closing) return;
     const at = toImage(event);
     if (interaction.dragging) {
       interaction.pointerMove(at);
@@ -227,7 +230,8 @@ export function startEditor(win: Window & typeof globalThis, page: EditorPage, i
   }
 
   async function copy(): Promise<void> {
-    if (!snap || closing) return;
+    // Mid-drag there is nothing final to export yet: copying the Region half-edited would be wrong.
+    if (!snap || closing || interaction?.dragging) return;
     // An open Note is already in its Box, so closing its field is all the saving there is.
     closeNote();
     closing = true;
@@ -252,6 +256,17 @@ export function startEditor(win: Window & typeof globalThis, page: EditorPage, i
     changed();
   }
 
+  /**
+   * The Editor closed without the page copying or discarding it (the title-bar ✕): Rust discarded the Snap
+   * and hid the window. Drop the pixels, so the old Region can neither come back nor sit in memory behind
+   * the hidden window.
+   */
+  function closed(): void {
+    forget();
+    canvas.width = 0;
+    canvas.height = 0;
+  }
+
   async function discard(): Promise<void> {
     if (!snap || closing) return;
     closeNote();
@@ -269,7 +284,8 @@ export function startEditor(win: Window & typeof globalThis, page: EditorPage, i
 
   doc.addEventListener("keydown", (event) => {
     const action = actionForKey(event, {
-      noteOpen: note !== null,
+      // The Interaction is the one record of which Box has its Note field open; the page only draws the field.
+      noteOpen: (interaction?.editing ?? -1) >= 0,
       textSelected: note?.hasSelection() ?? false,
       boxSelected: (interaction?.selected ?? -1) >= 0,
     });
@@ -299,6 +315,7 @@ export function startEditor(win: Window & typeof globalThis, page: EditorPage, i
     }
   });
   ipc.onCopyRequested(() => void copy());
+  ipc.onClosed?.(closed);
 
   function nextFrame(): Promise<void> {
     return new Promise((resolve) => win.requestAnimationFrame(() => resolve()));

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, TauriEvent } from "@tauri-apps/api/event";
 import { encodeDelta } from "./delta";
 
 /** The Editor page's side of the IPC with Rust (`src-tauri/src/commands.rs`). */
@@ -17,6 +17,8 @@ export interface EditorIpc {
   discard(): Promise<void>;
   /** `--snap` arrived while the Editor is open. */
   onCopyRequested(handler: () => void): void;
+  /** The Editor was asked to close (its title-bar ✕): Rust discards the Snap and hides the window. */
+  onClosed?(handler: () => void): void;
   /** A timing mark for the joint test session (ANNOTA-20): only in a build made with `VITE_TIMINGS=1`. */
   mark?(name: string): void;
 }
@@ -57,6 +59,11 @@ export const tauriIpc: EditorIpc = {
   discard: () => invoke("discard_snap"),
   onCopyRequested: (handler) => {
     void listen("copy-requested", handler);
+  },
+  // The ✕ is a close request, which Tauri also emits to the page. Listen to it directly: the window is never
+  // destroyed (editor.rs), and `onCloseRequested` would destroy it unless its handler prevented the close.
+  onClosed: (handler) => {
+    void listen(TauriEvent.WINDOW_CLOSE_REQUESTED, () => handler());
   },
   // Dead code in a normal build: Vite folds the constant away and Rust has no `timing_mark` command.
   mark,

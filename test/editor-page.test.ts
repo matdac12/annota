@@ -80,6 +80,9 @@ function startFakeEditor() {
   const parked: Array<(bytes: ArrayBuffer) => void> = [];
   const copied: Array<{ rgba: Uint8ClampedArray; width: number; height: number }> = [];
   let copyRequested = () => {};
+  let closeRequested = () => {};
+  let copyGate: Promise<void> | null = null;
+  let releaseCopy = () => {};
   const ipc: EditorIpc = {
     nextSnap: () => {
       calls.push("nextSnap");
@@ -89,18 +92,25 @@ function startFakeEditor() {
     copy: async (rgba, width, height) => {
       calls.push("copy");
       copied.push({ rgba, width, height });
+      await copyGate;
     },
     discard: async () => void calls.push("discard"),
     onCopyRequested: (handler) => (copyRequested = handler),
+    onClosed: (handler) => (closeRequested = handler),
   };
   const frames: Array<() => void> = [];
+  const observers: Array<(entries: unknown[]) => void> = [];
+  const rescaled: Array<() => void> = [];
   const win = {
     document: doc,
     devicePixelRatio: 1,
     ResizeObserver: class {
+      constructor(callback: (entries: unknown[]) => void) {
+        observers.push(callback);
+      }
       observe(): void {}
     },
-    matchMedia: () => ({ addEventListener: () => {} }),
+    matchMedia: () => ({ addEventListener: (_event: string, handler: () => void) => rescaled.push(handler) }),
     requestAnimationFrame: (callback: () => void) => frames.push(callback),
     setTimeout: () => 0,
   } as unknown as Window & typeof globalThis;
@@ -111,6 +121,13 @@ function startFakeEditor() {
     calls,
     copied,
     requestCopy: () => copyRequested(),
+    /** The title-bar ✕: Rust discards the Snap and hides the Editor, and tells the page it closed. */
+    close: () => closeRequested(),
+    /** The next copy stays in flight until `releaseCopy`. */
+    holdCopy() {
+      copyGate = new Promise<void>((resolve) => (releaseCopy = resolve));
+    },
+    releaseCopy: () => releaseCopy(),
     /** Rust answers the parked `next_snap` with a Region of the given RGBA. */
     deliver(width: number, height: number, rgba: number[]) {
       const bytes = new Uint8Array(rgba.length + 8);
@@ -136,6 +153,19 @@ function startFakeEditor() {
     },
     card: () => doc.querySelector<HTMLElement>(".note-card"),
     field: () => doc.querySelector<HTMLTextAreaElement>(".note-card textarea"),
+    /** The Editor window is resized: its canvas is now `width`×`height` device pixels. */
+    resize(width: number, height: number) {
+      const dpr = win.devicePixelRatio;
+      const css = { left: 0, top: 0, width: width / dpr, height: height / dpr };
+      vi.mocked(page.canvas.getBoundingClientRect).mockReturnValue(css as DOMRect);
+      const entry = { devicePixelContentBoxSize: [{ inlineSize: width, blockSize: height }], contentRect: css };
+      for (const report of observers) report([entry]);
+    },
+    /** The Editor moves to a monitor at another scale. */
+    rescale(ratio: number) {
+      (win as { devicePixelRatio: number }).devicePixelRatio = ratio;
+      for (const changed of rescaled.splice(0)) changed();
+    },
     typeNote(text: string) {
       const field = doc.querySelector<HTMLTextAreaElement>(".note-card textarea")!;
       field.value = text;
@@ -366,4 +396,65 @@ it("starts the next Snap with no Boxes", async () => {
   editor.deliver(400, 300, BIG);
   await settle();
   expect(editor.page.hint.textContent).toMatch(/^0 notes/);
+});
+
+it("clears the Region from the canvas when the Editor closes, so nothing stale is left to copy", async () => {
+  const editor = await editorWithRegion();
+  editor.dragBox([250, 200], [350, 260]);
+  editor.press("Enter");
+  expect(editor.page.canvas.width, "the Region is on the canvas").toBe(800);
+
+  editor.close();
+  expect(editor.page.canvas.width).toBe(0);
+  expect(editor.page.canvas.height).toBe(0);
+
+  editor.press("c", true);
+  await settle();
+  expect(editor.copied, "there is no Snap to copy").toHaveLength(0);
+});
+
+it("keeps the Note card's width in step with a window resize", async () => {
+  const editor = await editorWithRegion();
+  editor.dragBox([250, 200], [350, 260]);
+  expect(editor.card()!.style.width, "the Region at 100%, its Callout cap as it shows").toBe("384px");
+
+  editor.resize(200, 150);
+  expect(editor.card()!.style.width, "the Region now fits at 50%").toBe("280px");
+});
+
+it("keeps the Note card's width in step with a move to a monitor at another scale", async () => {
+  const editor = await editorWithRegion();
+  editor.dragBox([250, 200], [350, 260]);
+  expect(editor.card()!.style.width).toBe("384px");
+
+  editor.rescale(2);
+  expect(editor.card()!.style.width, "the same pixels at twice the scale are half as wide on screen").toBe("280px");
+});
+
+it("does nothing on Ctrl+C in the middle of a drag", async () => {
+  const editor = await editorWithRegion();
+  editor.mouse("pointerdown", 250, 200);
+  editor.mouse("pointermove", 350, 260);
+  editor.press("c", true);
+  await settle();
+  expect(editor.copied, "the drag is not exported halfway").toHaveLength(0);
+
+  editor.mouse("pointerup", 350, 260);
+  expect(editor.card(), "the Box is drawn and its Note field opens").not.toBeNull();
+});
+
+it("ignores the pointer while a copy is in flight", async () => {
+  const editor = await editorWithRegion();
+  editor.dragBox([250, 200], [350, 260]);
+  editor.press("Enter");
+  editor.holdCopy();
+  editor.press("c", true);
+  await settle();
+  expect(editor.calls).toContain("copy");
+
+  editor.mouse("pointermove", 300, 230);
+  expect(editor.page.canvas.style.cursor, "the pointer is ignored until the copy is over").toBe("");
+
+  editor.releaseCopy();
+  await settle();
 });
