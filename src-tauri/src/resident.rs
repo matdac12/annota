@@ -35,6 +35,25 @@ pub fn start(first: bool, elevated: bool) -> Start {
     }
 }
 
+/// What waiting for the relaunched Annota found: the shell's own exit status, if it has ended, and whether
+/// some process now holds the Resident's mutex.
+///
+/// The mutex alone is not proof: an `explorer.exe` that exits with an error refused the relaunch, and a
+/// mutex someone holds after a refusal was claimed by some other launch.
+#[cfg(windows)]
+fn relaunch_verdict(shell: Option<std::process::ExitStatus>, claimed: bool) -> std::io::Result<()> {
+    if let Some(refused) = shell.filter(|status| !status.success()) {
+        return Err(std::io::Error::other(format!(
+            "explorer.exe refused the relaunch (exit code {})",
+            refused.code().unwrap_or(-1)
+        )));
+    }
+    if !claimed {
+        return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "the shell did not start Annota"));
+    }
+    Ok(())
+}
+
 #[cfg(windows)]
 mod sys {
     use std::io;
@@ -123,23 +142,26 @@ mod sys {
     }
 
     /// Starts this exe again through the shell, unelevated and with no arguments, and waits for it to
-    /// take the claim. Errs when it doesn't appear: Explorer isn't running, or it opened a folder window
-    /// in a separate process and dropped the request.
+    /// take the claim. Errs when it doesn't appear, or when the shell itself refuses: Explorer isn't
+    /// running, or it opened a folder window in a separate process and dropped the request.
     pub fn relaunch_through_shell(claim: Claim) -> io::Result<()> {
         // Let go first, so the new Annota becomes the first launch and not a second one.
         claim.release();
         // The full path, so an elevated launch never runs an `explorer.exe` planted next to the app.
         let windows = std::env::var_os("WINDIR")
             .map_or_else(|| PathBuf::from("C:\\Windows"), PathBuf::from);
-        Command::new(windows.join("explorer.exe")).arg(std::env::current_exe()?).spawn()?;
+        let mut shell = Command::new(windows.join("explorer.exe")).arg(std::env::current_exe()?).spawn()?;
         let start = Instant::now();
+        let mut shell_ended = None;
         while start.elapsed() < RELAUNCH_WAIT {
             if someone_holds_it() {
-                return Ok(());
+                return super::relaunch_verdict(shell_ended, true);
             }
+            // The shell that took the request leaves at once: its exit status says whether it accepted.
+            shell_ended = shell_ended.or(shell.try_wait()?);
             std::thread::sleep(Duration::from_millis(50));
         }
-        Err(io::Error::new(io::ErrorKind::TimedOut, "the shell did not start Annota"))
+        super::relaunch_verdict(shell_ended, false)
     }
 }
 
@@ -182,5 +204,33 @@ mod tests {
     fn a_launch_that_lost_the_mutex_is_dropped_elevated_or_not() {
         assert_eq!(start(false, false), Start::Exit);
         assert_eq!(start(false, true), Start::Exit);
+    }
+
+    #[cfg(windows)]
+    mod relaunch {
+        use super::*;
+        use std::os::windows::process::ExitStatusExt;
+        use std::process::ExitStatus;
+
+        #[test]
+        fn a_relaunch_that_is_up_and_whose_shell_did_not_complain_is_success() {
+            assert!(relaunch_verdict(None, true).is_ok(), "the shell hands off and leaves");
+            assert!(relaunch_verdict(Some(ExitStatus::from_raw(0)), true).is_ok());
+        }
+
+        #[test]
+        fn a_relaunch_the_shell_refused_is_an_error_even_with_a_mutex_there() {
+            let refused = Some(ExitStatus::from_raw(1));
+            let error = relaunch_verdict(refused, true).unwrap_err();
+            assert!(error.to_string().contains("refused"), "{error}");
+            assert!(error.to_string().contains("exit code 1"), "{error}");
+            assert!(relaunch_verdict(refused, false).is_err());
+        }
+
+        #[test]
+        fn a_relaunch_nobody_took_is_a_timeout() {
+            let error = relaunch_verdict(None, false).unwrap_err();
+            assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        }
     }
 }

@@ -24,6 +24,10 @@ pub const COPY_REQUESTED: &str = "copy-requested";
 /// stuck in `Selecting` with nothing on screen.
 const PAINT_DEADLINE: Duration = Duration::from_millis(1500);
 
+/// If the page hasn't started the copy it was asked for by now, its `copy-requested` listener is gone and
+/// the Editor stays open: worth a log line, not another wait.
+const COPY_DEADLINE: Duration = Duration::from_secs(3);
+
 /// What the Resident is doing. A `--snap` that arrives while the Resident is still starting (spec §3.1,
 /// "Starting") never gets here: the second process is dropped by the `Local\` mutex.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,10 +219,29 @@ fn finish(app: &AppHandle) {
 }
 
 /// `--snap` (or the tray) while the Editor is open: the same as Ctrl+C. The canvas lives in the page, so
-/// ask it to copy.
+/// ask it to copy; a request the page can't hear, or never answers, is logged rather than lost.
 pub fn copy_and_close(app: &AppHandle) {
     timings::mark("copy_requested");
-    let _ = app.emit_to(editor::LABEL, COPY_REQUESTED, ());
+    if let Err(e) = app.emit_to(editor::LABEL, COPY_REQUESTED, ()) {
+        eprintln!("snap: could not ask the Editor to copy: {e}");
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(COPY_DEADLINE);
+        let on_main = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            if copy_went_unanswered(on_main.state::<Resident>().state()) {
+                eprintln!("snap: the page did not answer the copy request; the Editor is still open");
+            }
+        });
+    });
+}
+
+/// Whether the page never answered `copy-requested`: the Snap is still in the Editor after the deadline,
+/// so its `copy_snap`/`copy_delta` never ran.
+fn copy_went_unanswered(state: State) -> bool {
+    state == State::Editing
 }
 
 #[cfg(test)]
@@ -238,6 +261,17 @@ mod tests {
     #[test]
     fn a_snap_request_in_the_editor_copies_and_closes() {
         assert_eq!(State::Editing.on_snap_request(), Reaction::CopyAndClose);
+    }
+
+    #[test]
+    fn a_copy_request_the_page_has_not_answered_by_the_deadline_is_reported() {
+        assert!(copy_went_unanswered(State::Editing));
+    }
+
+    #[test]
+    fn a_copy_request_that_was_answered_is_not_reported() {
+        assert!(!copy_went_unanswered(State::Idle), "the page copied and the Editor closed");
+        assert!(!copy_went_unanswered(State::Selecting), "a new Snap started in the meantime");
     }
 
     #[test]

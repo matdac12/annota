@@ -61,7 +61,11 @@ fn main() {
         Start::Exit => std::process::exit(0),
         // Never become the Resident from an elevated process; start it through the shell instead.
         Start::RelaunchThroughShell => {
-            std::process::exit(if resident::relaunch_through_shell(claim).is_ok() { 0 } else { 1 })
+            let relaunched = resident::relaunch_through_shell(claim);
+            if let Err(e) = &relaunched {
+                eprintln!("resident: the shell relaunch failed: {e}");
+            }
+            std::process::exit(if relaunched.is_ok() { 0 } else { 1 })
         }
     }
     // Held until the process exits: Windows releases the mutex then.
