@@ -86,10 +86,7 @@ export function calloutLayout(
   const gap = Math.round(0.4 * F);
 
   const lead = measure(`${number}.`, true) + 0.35 * F;
-  // A Note column of four em rather than one character, but never wider than the Region can hold: a Callout
-  // that runs past the margin has its Note clipped out of the copied PNG.
-  const room = image.width - 2 * margin - lead - 2 * padX;
-  const lines = wrapText(measure, box.note, Math.max(cap - lead - 2 * padX, Math.min(4 * F, room)));
+  const lines = wrapText(measure, box.note, cap - lead - 2 * padX);
   const textWidth = Math.max(F, ...lines.map((line) => measure(line, false)));
   const w = Math.ceil(lead + textWidth + 2 * padX);
   const h = lines.length * lineHeight + 2 * padY;

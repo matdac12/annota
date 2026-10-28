@@ -78,13 +78,6 @@ describe("calloutLayout", () => {
     expect(layout.x + layout.w).toBeLessThanOrEqual(narrow.width - s.margin);
   });
 
-  it("keeps a readable Note column while the Region can hold one", () => {
-    const narrow = { width: 130, height: 200 };
-    const s = sizingFor(narrow.width, narrow.height); // F is 16, so six of tenPx's characters fit the room.
-    const layout = calloutLayout(tenPx, { x: 0, y: 40, w: 40, h: 40, note: "abcdefghi" }, 1, s, narrow)!;
-    expect(layout.lines).toEqual(["abcdef", "ghi"]);
-  });
-
   it("keeps the inside Callout inside the top margin in a short Region", () => {
     const short = { width: 800, height: 60 };
     const s = sizingFor(short.width, short.height);
