@@ -83,10 +83,22 @@ it("lets a Callout over empty canvas take the click, and picks the topmost Callo
   expect(hitTest(boxes, -1, { x: 405, y: 405 }, 6, 6, callouts)).toEqual({ type: "callout", index: 0 });
 });
 
-it("gives the Box under the pointer the click over another Box's Callout", () => {
-  const callouts = [{ x: 100, y: 160, w: 80, h: 30 }, null];
-  const alone = [box(100, 100, 50, 50), box(300, 10, 20, 20)];
-  expect(hitTest(alone, -1, { x: 110, y: 170 }, 6, 6, callouts)).toEqual({ type: "callout", index: 0 });
-  const over = [box(100, 100, 50, 50), box(105, 160, 100, 100)];
-  expect(hitTest(over, -1, { x: 110, y: 170 }, 6, 6, callouts)).toEqual({ type: "box", index: 1 });
+it("gives a Box's edge the click where a Callout overlaps it", () => {
+  const boxes = [box(300, 20, 50, 50), box(105, 160, 200, 100)];
+  const callouts = [null, { x: 95, y: 150, w: 100, h: 60 }];
+  expect(hitTest(boxes, -1, { x: 160, y: 160 }, 6, 6, callouts)).toEqual({ type: "box", index: 1 });
+});
+
+it("gives a Box's badge the click where a Callout overlaps it", () => {
+  const boxes = [box(300, 20, 50, 50), box(105, 160, 200, 100)];
+  const callouts = [null, { x: 95, y: 150, w: 100, h: 60 }];
+  const tolerance = 6;
+  const handleTolerance = tolerance + sizingFor(400, 300).S;
+  expect(hitTest(boxes, -1, { x: 100, y: 152 }, tolerance, handleTolerance, callouts)).toEqual({ type: "box", index: 1 });
+});
+
+it("lets a Callout over a Box's interior take the click, so a Box inside another keeps its Note", () => {
+  const boxes = [box(50, 50, 400, 300), box(100, 100, 40, 40)];
+  const callouts = [null, { x: 100, y: 150, w: 80, h: 30 }];
+  expect(hitTest(boxes, -1, { x: 110, y: 160 }, 6, 6, callouts)).toEqual({ type: "callout", index: 1 });
 });

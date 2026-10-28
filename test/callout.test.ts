@@ -70,9 +70,17 @@ describe("calloutLayout", () => {
     expect(layout.y + layout.h).toBe(800 - sizing.margin);
   });
 
-  it("keeps at least four em of Note on a line in a narrow Region", () => {
-    const narrow = { width: 40, height: 200 };
-    const s = sizingFor(narrow.width, narrow.height); // F is 16, so four em hold six of tenPx's characters.
+  it("keeps a narrow Region's Callout inside the image margins", () => {
+    const narrow = { width: 80, height: 200 };
+    const s = sizingFor(narrow.width, narrow.height);
+    const layout = calloutLayout(tenPx, { x: 0, y: 40, w: 40, h: 40, note: "abcdefghij" }, 1, s, narrow)!;
+    expect(layout.x).toBe(s.margin);
+    expect(layout.x + layout.w).toBeLessThanOrEqual(narrow.width - s.margin);
+  });
+
+  it("keeps a readable Note column while the Region can hold one", () => {
+    const narrow = { width: 130, height: 200 };
+    const s = sizingFor(narrow.width, narrow.height); // F is 16, so six of tenPx's characters fit the room.
     const layout = calloutLayout(tenPx, { x: 0, y: 40, w: 40, h: 40, note: "abcdefghi" }, 1, s, narrow)!;
     expect(layout.lines).toEqual(["abcdef", "ghi"]);
   });

@@ -71,11 +71,13 @@ export function cornerPoints(rect: Rect): Array<[Corner, Point]> {
 }
 
 /**
- * What a point lands on: a handle of the selected Box first, then the topmost Box (later Boxes draw over
- * earlier ones, and its badge is part of it), then the topmost Callout, so a Box under the pointer keeps
- * the click from another Box's Callout. `tolerance` widens a Box's edge and `handleTolerance` a handle, both
- * in image pixels; their difference is the Box stroke, and the badge reaches six strokes from the corner,
- * which covers its disc of `D = 1.45F` at every size. `callouts` are the drawn Callouts by Box, null for none.
+ * What a point lands on, in this order: a handle of the selected Box; the topmost Box's edge (within
+ * `tolerance` of its stroke) or badge (later Boxes draw over earlier ones); the topmost Callout; the topmost
+ * Box's interior. So a Callout keeps a click over another Box's inside — a Box drawn inside a bigger one can
+ * still have its Note clicked — while a Box's border and badge win over a Callout that overlaps them.
+ * `handleTolerance` widens a handle; its difference from `tolerance` is the Box stroke, and the badge reaches
+ * six strokes from the corner, which covers its disc of `D = 1.45F` at every size. All in image pixels;
+ * `callouts` are the drawn Callouts by Box, null for none.
  */
 export function hitTest(
   boxes: readonly Box[],
@@ -93,16 +95,21 @@ export function hitTest(
       }
     }
   }
+  const around = (rect: Rect): boolean =>
+    point.x >= rect.x - tolerance &&
+    point.x <= rect.x + rect.w + tolerance &&
+    point.y >= rect.y - tolerance &&
+    point.y <= rect.y + rect.h + tolerance;
+  const inside = (rect: Rect): boolean =>
+    point.x >= rect.x + tolerance &&
+    point.x <= rect.x + rect.w - tolerance &&
+    point.y >= rect.y + tolerance &&
+    point.y <= rect.y + rect.h - tolerance;
   const badgeReach = 6 * Math.max(0, handleTolerance - tolerance);
+
   for (let index = boxes.length - 1; index >= 0; index--) {
     const box = boxes[index];
-    if (
-      (point.x >= box.x - tolerance &&
-        point.x <= box.x + box.w + tolerance &&
-        point.y >= box.y - tolerance &&
-        point.y <= box.y + box.h + tolerance) ||
-      Math.hypot(point.x - box.x, point.y - box.y) <= badgeReach
-    ) {
+    if ((around(box) && !inside(box)) || Math.hypot(point.x - box.x, point.y - box.y) <= badgeReach) {
       return { type: "box", index };
     }
   }
@@ -117,6 +124,9 @@ export function hitTest(
     ) {
       return { type: "callout", index };
     }
+  }
+  for (let index = boxes.length - 1; index >= 0; index--) {
+    if (inside(boxes[index])) return { type: "box", index };
   }
   return { type: "none" };
 }
