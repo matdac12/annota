@@ -30,15 +30,15 @@ export interface CalloutLayout extends Rect {
 }
 
 /**
- * Splits a Note into lines no wider than `maxWidth`: at spaces, then by characters inside a word that is
- * wider than a line on its own. Explicit newlines are kept; newlines at the end are not.
+ * Splits a Note into lines no wider than `maxWidth`: at runs of whitespace, then by characters inside a word
+ * that is wider than a line on its own. Explicit newlines are kept; newlines at the end are not.
  */
 export function wrapText(measure: Measure, text: string, maxWidth: number): string[] {
   const fits = (candidate: string): boolean => measure(candidate, false) <= maxWidth;
   const lines: string[] = [];
   for (const paragraph of text.trimEnd().split(/\r?\n/)) {
     let line = "";
-    for (const word of paragraph.split(" ")) {
+    for (const word of paragraph.split(/\s+/).filter((word) => word)) {
       const joined = line ? `${line} ${word}` : word;
       if (fits(joined)) {
         line = joined;
@@ -68,8 +68,8 @@ const clamp = (value: number, low: number, high: number): number => Math.max(low
 
 /**
  * The Callout of one Box (spec 8.3), or null when its Note is empty. Left-aligned with the Box and kept inside
- * the margin; under the Box at 0.4F below its stroke, else above it clearing the badge, else clamped inside the
- * bottom margin. Overlaps with other Callouts are allowed.
+ * the margin; under the Box at 0.4F below its stroke, else above it clearing the badge, else inside the top and
+ * bottom margins (covering its Box if it must). Overlaps with other Callouts are allowed.
  */
 export function calloutLayout(
   measure: Measure,
@@ -86,7 +86,9 @@ export function calloutLayout(
   const gap = Math.round(0.4 * F);
 
   const lead = measure(`${number}.`, true) + 0.35 * F;
-  const lines = wrapText(measure, box.note, cap - lead - 2 * padX);
+  // Never squeeze the Note into more than one character a line: keep four em of it, even if the Callout
+  // then runs past the Region's right edge.
+  const lines = wrapText(measure, box.note, Math.max(4 * F, cap - lead - 2 * padX));
   const textWidth = Math.max(F, ...lines.map((line) => measure(line, false)));
   const w = Math.ceil(lead + textWidth + 2 * padX);
   const h = lines.length * lineHeight + 2 * padY;
@@ -98,7 +100,7 @@ export function calloutLayout(
     y = box.y - S / 2 - gap - D / 2 - h;
     side = "above";
     if (y < margin) {
-      y = image.height - margin - h;
+      y = Math.max(margin, image.height - margin - h);
       side = "inside";
     }
   }

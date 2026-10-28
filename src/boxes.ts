@@ -71,9 +71,11 @@ export function cornerPoints(rect: Rect): Array<[Corner, Point]> {
 }
 
 /**
- * What a point lands on: a handle of the selected Box first, then the topmost Callout (they draw over the
- * Boxes), then the topmost Box (later Boxes draw over earlier ones). `tolerance` widens a Box's edge and
- * `handleTolerance` a handle, both in image pixels. `callouts` are the drawn Callouts by Box, null for none.
+ * What a point lands on: a handle of the selected Box first, then the topmost Box (later Boxes draw over
+ * earlier ones, and its badge is part of it), then the topmost Callout, so a Box under the pointer keeps
+ * the click from another Box's Callout. `tolerance` widens a Box's edge and `handleTolerance` a handle, both
+ * in image pixels; their difference is the Box stroke, and the badge reaches six strokes from the corner,
+ * which covers its disc of `D = 1.45F` at every size. `callouts` are the drawn Callouts by Box, null for none.
  */
 export function hitTest(
   boxes: readonly Box[],
@@ -91,6 +93,19 @@ export function hitTest(
       }
     }
   }
+  const badgeReach = 6 * Math.max(0, handleTolerance - tolerance);
+  for (let index = boxes.length - 1; index >= 0; index--) {
+    const box = boxes[index];
+    if (
+      (point.x >= box.x - tolerance &&
+        point.x <= box.x + box.w + tolerance &&
+        point.y >= box.y - tolerance &&
+        point.y <= box.y + box.h + tolerance) ||
+      Math.hypot(point.x - box.x, point.y - box.y) <= badgeReach
+    ) {
+      return { type: "box", index };
+    }
+  }
   for (let index = callouts.length - 1; index >= 0; index--) {
     const callout = callouts[index];
     if (
@@ -101,17 +116,6 @@ export function hitTest(
       point.y <= callout.y + callout.h
     ) {
       return { type: "callout", index };
-    }
-  }
-  for (let index = boxes.length - 1; index >= 0; index--) {
-    const box = boxes[index];
-    if (
-      point.x >= box.x - tolerance &&
-      point.x <= box.x + box.w + tolerance &&
-      point.y >= box.y - tolerance &&
-      point.y <= box.y + box.h + tolerance
-    ) {
-      return { type: "box", index };
     }
   }
   return { type: "none" };
