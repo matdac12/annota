@@ -42,6 +42,9 @@ export class Interaction {
 
   private drag: Drag | null = null;
   private readonly strokeWidth: number;
+  /** The Callouts as last laid out, and what they were laid out for: the Boxes, their Notes and `editing`. */
+  private drawn: ReadonlyArray<Rect | null> | null = null;
+  private drawnFor = "";
 
   /** @param cssPerImage how many CSS pixels one image pixel takes on screen right now. */
   constructor(
@@ -58,9 +61,20 @@ export class Interaction {
     return this.drag !== null;
   }
 
+  /** The Callouts as drawn now, laid out again only when a Box, a Note or `editing` has changed since. */
+  private drawnCallouts(): ReadonlyArray<Rect | null> {
+    const key = JSON.stringify([this.editing, this.scene.boxes.map(({ x, y, w, h, note }) => [x, y, w, h, note])]);
+    if (key !== this.drawnFor) {
+      this.drawn = this.callouts();
+      this.drawnFor = key;
+    }
+    return this.drawn ?? [];
+  }
+
   private hit(point: Point) {
     const tolerance = HIT_CSS_PX / this.cssPerImage();
-    return hitTest(this.scene.boxes, this.selected, point, tolerance, tolerance + this.strokeWidth, this.callouts());
+    const callouts = this.drawnCallouts();
+    return hitTest(this.scene.boxes, this.selected, point, tolerance, tolerance + this.strokeWidth, callouts);
   }
 
   /** The cursor over a point while no button is down. */

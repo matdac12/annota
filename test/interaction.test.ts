@@ -135,3 +135,36 @@ it("selects a Box when its Callout is clicked, without dragging it, and edits it
   expect(interaction.editAt({ x: 100, y: 110 })).toBe(0);
   expect(scene.boxes[0]).toEqual({ x: 50, y: 50, w: 40, h: 40, note: "look" });
 });
+
+it("lays the Callouts out again only when a Box, a Note or the editing Box changes", () => {
+  const scene: Scene = { width: 400, height: 300, boxes: [{ x: 50, y: 50, w: 40, h: 40, note: "look" }] };
+  let laidOut = 0;
+  const interaction = new Interaction(scene, () => 1, () => {
+    laidOut += 1;
+    return [{ x: 50, y: 95, w: 100, h: 30 }];
+  });
+
+  // Two moves over the same Boxes: nothing changed, so nothing is laid out again.
+  interaction.cursorAt({ x: 10, y: 10 });
+  interaction.cursorAt({ x: 20, y: 10 });
+  expect(laidOut).toBe(1);
+
+  interaction.startEditing(0);
+  interaction.cursorAt({ x: 10, y: 10 });
+  expect(laidOut, "the editing Box changed").toBe(2);
+  interaction.stopEditing();
+
+  scene.boxes[0].note = "look again";
+  interaction.cursorAt({ x: 10, y: 10 });
+  expect(laidOut, "a Note changed").toBe(3);
+
+  // A Box moved by a drag is laid out once the drag is over, not at every pointer move.
+  interaction.pointerDown({ x: 60, y: 60 });
+  interaction.pointerMove({ x: 70, y: 70 });
+  interaction.pointerMove({ x: 80, y: 80 });
+  interaction.pointerUp();
+  expect(laidOut, "no layout while the Box moves").toBe(3);
+
+  interaction.cursorAt({ x: 95, y: 95 });
+  expect(laidOut, "the Box moved").toBe(4);
+});

@@ -22,6 +22,11 @@ describe("wrapText", () => {
     expect(wrapText(tenPx, "ab abcdefghij c", 40)).toEqual(["ab", "abcd", "efgh", "ij c"]);
   });
 
+  it("splits on any run of whitespace, keeping single spaces", () => {
+    expect(wrapText(tenPx, "aaa \t bbb", 70)).toEqual(["aaa bbb"]);
+    expect(wrapText(tenPx, "  aaa  bbb  ", 70)).toEqual(["aaa bbb"]);
+  });
+
   it("keeps explicit newlines, including blank lines", () => {
     expect(wrapText(tenPx, "one\n\ntwo\r\nthree", 200)).toEqual(["one", "", "two", "three"]);
   });
@@ -63,6 +68,22 @@ describe("calloutLayout", () => {
     const layout = place({ x: 100, y: 10, w: 200, h: 780 });
     expect(layout.side).toBe("inside");
     expect(layout.y + layout.h).toBe(800 - sizing.margin);
+  });
+
+  it("keeps a narrow Region's Callout inside the image margins", () => {
+    const narrow = { width: 80, height: 200 };
+    const s = sizingFor(narrow.width, narrow.height);
+    const layout = calloutLayout(tenPx, { x: 0, y: 40, w: 40, h: 40, note: "abcdefghij" }, 1, s, narrow)!;
+    expect(layout.x).toBe(s.margin);
+    expect(layout.x + layout.w).toBeLessThanOrEqual(narrow.width - s.margin);
+  });
+
+  it("keeps the inside Callout inside the top margin in a short Region", () => {
+    const short = { width: 800, height: 60 };
+    const s = sizingFor(short.width, short.height);
+    const layout = calloutLayout(tenPx, { x: 100, y: 10, w: 200, h: 40, note: "aaaa ".repeat(40) }, 1, s, short)!;
+    expect(layout.side).toBe("inside");
+    expect(layout.y).toBe(s.margin);
   });
 
   it("clamps near the right edge, inside the margin", () => {
