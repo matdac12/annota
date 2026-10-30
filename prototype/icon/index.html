@@ -1,0 +1,29 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Annota icon prototypes (throwaway)</title>
+<style>
+body{font:14px system-ui,sans-serif;margin:0;color:#222}
+.card{margin:0 0 18px;border:1px solid #8884;border-radius:12px;overflow:hidden}
+.card h3{margin:0;padding:10px 14px 2px;font-size:15px}
+.card p{margin:0;padding:0 14px 10px;color:#777}
+.row{display:flex;align-items:flex-end;gap:22px;padding:14px}
+.row.l{background:#f3f3f3}.row.d{background:#202020}
+.row figure{margin:0;text-align:center;font-size:10px;color:#888}
+.row img{display:block;margin:0 auto 4px}
+.fam .row{gap:30px}
+</style></head><body>
+<div id="o"></div>
+<script>
+const base = window.ICON_BASE || '';
+const icons = [
+ ['icon-1-numbered-box.svg','1 · Numbered Box','A red Box with its yellow number badge: the one thing Annota draws.'],
+ ['icon-2-region.svg','2 · Region','Four ivory crop corners around a small red Box: drag a Region, box what matters.'],
+ ['icon-3-callout.svg','3 · Callout','A red Box with a yellow sticky Note laid over it: the Note that ends up beside the Box.'],
+ ['icon-4-letter.svg','4 · Boxed A','A bold ivory "A" inside a red Box: the name, annotated.'],
+ ['icon-5-snap.svg','5 · Marked Snap','An ivory window frame holding a screenshot with one numbered red Box: the finished Snap.'],
+];
+const sizes=[256,48,32,16];
+const row=(files,k)=>`<div class="row ${k}">`+files.map(f=>sizes.map(s=>`<figure><img src="${base}${f}" width="${s}" height="${s}">${s}</figure>`).join('')).join('')+'</div>';
+o.innerHTML = icons.map(([f,t,d]) => `<div class="card"><h3>${t}</h3><p>${d}</p>`+['l','d'].map(k=>row([f],k)).join('')+'</div>').join('')+
+ `<div class="card fam"><h3>Family check</h3><p>scrivi, Tasca, then icons 1 to 5 at 48 and 16 px.</p>`+
+ ['l','d'].map(k=>`<div class="row ${k}">`+['ref-scrivi.svg','ref-tasca.svg',...icons.map(i=>i[0])].map(f=>[48,16].map(s=>`<figure><img src="${base}${f}" width="${s}" height="${s}">${s}</figure>`).join('')).join('')+'</div>').join('')+'</div>';
+</script></body></html>
