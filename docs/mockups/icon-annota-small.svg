@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="t">
+  <title id="t">Annota icon, small size: a thicker Box and a plain sticky Note</title>
+  <!-- Used at 16, 20 and 24 px, where the full drawing blurs. The Box stroke is
+       32 (two pixels at 16 px) instead of 16, the Note's lines and folded
+       corner are gone, and the gloss is gone. The light edge is clipped to the
+       tile and a full pixel wide so the navy tile still separates from a dark
+       taskbar. -->
+  <defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2D3C5E"/><stop offset="1" stop-color="#172033"/></linearGradient><linearGradient id="red" x1="0" y1="0" x2="1" y2="0.6"><stop offset="0" stop-color="#F25C60"/><stop offset="1" stop-color="#D13439"/></linearGradient><linearGradient id="yel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FCD65A"/><stop offset="1" stop-color="#F0B323"/></linearGradient><clipPath id="tile-clip"><rect x="8" y="8" width="240" height="240" rx="54"/></clipPath></defs>
+  <g clip-path="url(#tile-clip)">
+    <rect x="8" y="8" width="240" height="240" rx="54" fill="url(#tile)"/>
+    <rect x="8" y="8" width="240" height="240" rx="54" fill="none" stroke="#fff" stroke-opacity="0.5" stroke-width="32"/>
+    <rect x="32" y="32" width="144" height="128" rx="20" fill="none" stroke="url(#red)" stroke-width="32"/>
+    <rect x="112" y="96" width="112" height="112" rx="16" fill="url(#yel)"/>
+  </g>
+</svg>

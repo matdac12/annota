@@ -103,11 +103,46 @@ pub fn build(app: &App) -> tauri::Result<()> {
                 }
             }
         });
-    if let Some(icon) = app.default_window_icon() {
-        tray = tray.icon(icon.clone());
+    if let Some(icon) = load_tray_icon(app) {
+        tray = tray.icon(icon);
     }
     tray.build(app)?;
     Ok(())
+}
+
+/// `0` means `GetSystemMetrics` failed. The tray then asks for 16 px, which is
+/// the small icon size at 96 DPI.
+fn tray_icon_px(metric: i32) -> u32 {
+    u32::try_from(metric)
+        .ok()
+        .filter(|px| *px > 0)
+        .unwrap_or(16)
+}
+
+/// The notification area draws at the small icon size (16 px at 96 DPI, 20 at
+/// 125%, 24 at 150%). The default window icon is the large size, so using it
+/// here would shrink the detailed drawing and skip the 16, 20 and 24 entries.
+fn load_tray_icon(app: &App) -> Option<tauri::image::Image<'static>> {
+    #[cfg(windows)]
+    {
+        let px = tray_icon_px(small_icon_metric());
+        if let Ok(icon) = tauri::image::Image::from_app_icon_resource(px) {
+            return Some(icon);
+        }
+    }
+    app.default_window_icon()
+        .cloned()
+        .map(|icon| icon.to_owned())
+}
+
+#[cfg(windows)]
+fn small_icon_metric() -> i32 {
+    // SAFETY: reads one system metric. No handle, no pointer.
+    unsafe {
+        windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(
+            windows::Win32::UI::WindowsAndMessaging::SM_CXSMICON,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -154,5 +189,14 @@ mod tests {
     #[test]
     fn an_unknown_menu_item_does_nothing() {
         assert_eq!(action_for_menu_item("settings"), None);
+    }
+
+    #[test]
+    fn the_tray_uses_the_small_icon_size_and_16_px_when_the_metric_is_missing() {
+        assert_eq!(tray_icon_px(16), 16);
+        assert_eq!(tray_icon_px(20), 20);
+        assert_eq!(tray_icon_px(24), 24);
+        assert_eq!(tray_icon_px(0), 16);
+        assert_eq!(tray_icon_px(-1), 16);
     }
 }
