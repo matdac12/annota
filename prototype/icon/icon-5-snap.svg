@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="t">
+  <title id="t">Annota icon prototype 5: Marked Snap</title>
+  <defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2D3C5E"/><stop offset="1" stop-color="#172033"/></linearGradient><linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.16"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/></linearGradient><linearGradient id="red" x1="0" y1="0" x2="1" y2="0.6"><stop offset="0" stop-color="#F25C60"/><stop offset="1" stop-color="#D13439"/></linearGradient><linearGradient id="yel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FCD65A"/><stop offset="1" stop-color="#F0B323"/></linearGradient></defs>
+  <rect x="8" y="8" width="240" height="240" rx="54" fill="url(#tile)"/>
+  <rect x="8" y="8" width="240" height="240" rx="54" fill="url(#gloss)"/>
+  <rect x="8.75" y="8.75" width="238.5" height="238.5" rx="53.25" fill="none" stroke="#fff" stroke-opacity="0.22" stroke-width="1.5"/>
+  <rect x="40" y="58" width="176" height="140" rx="26" fill="#F6F3EA"/>
+  <rect x="54" y="88" width="148" height="96" rx="12" fill="#2D3C5E"/>
+  <circle cx="70" cy="73" r="6" fill="#2D3C5E" opacity=".7"/><circle cx="90" cy="73" r="6" fill="#2D3C5E" opacity=".4"/>
+  <rect x="82" y="108" width="92" height="56" rx="10" fill="none" stroke="url(#red)" stroke-width="12"/>
+  <circle cx="82" cy="108" r="17" fill="url(#yel)"/>
+</svg>
